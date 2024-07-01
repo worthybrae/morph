@@ -130,7 +130,7 @@ def process_frames(ffmpeg_process, output_process, buffer, width, height, backgr
             buffer.pop(0)
         
         # Write the frame to the FFmpeg output process
-        output_process.stdin.write(frame.tobytes())
+        output_process.stdin.write(background.tobytes())
 
 def main():
     output_stream = 'rtmp://nginx:1935/live/stream'
