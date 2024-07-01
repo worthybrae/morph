@@ -97,7 +97,8 @@ def main():
 
     while True:
         input_stream = get_dynamic_url()
-        
+        print(input_stream)
+        print(formatted_headers)
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 640, 480, 30)
         width, height, fps = 640, 480, 30  # Modify these values as needed
