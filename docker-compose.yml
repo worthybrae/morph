@@ -13,3 +13,4 @@ services:
     build: .
     depends_on:
       - nginx
+    restart: unless-stopped
