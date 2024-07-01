@@ -24,7 +24,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker buildx build --push --tag your-dockerhub-username/livestream-restreamer:latest .
+          docker buildx build --push --tag your-dockerhub-username/morph:latest .
 
       - name: SSH to DigitalOcean and deploy
         uses: appleboy/ssh-action@master
