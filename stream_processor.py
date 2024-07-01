@@ -2,10 +2,62 @@ import cv2
 import numpy as np
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+import math
+
 
 def get_dynamic_url():
     return f'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w{int(time.time())}.m3u8'
+
+def calculate_sunrise_sunset(day_of_year, latitude=51.5074, longitude=-0.1278):
+    # Approximate sunrise and sunset times based on the day of the year
+    # This is a simplified version and not highly accurate
+    # For London, UK
+    days_from_solstice = day_of_year - 172
+    if days_from_solstice < 0:
+        days_from_solstice += 365
+    
+    sunset_hour = 18 - 2.5 * math.cos(math.radians(days_from_solstice * 360 / 365))
+    sunrise_hour = 6 + 2.5 * math.cos(math.radians(days_from_solstice * 360 / 365))
+    
+    return sunrise_hour, sunset_hour
+
+def get_colors():
+    now = datetime.now()
+    london_time = now + timedelta(hours=1)  # Adjusting to London time
+    day_of_year = london_time.timetuple().tm_yday
+    
+    sunrise_hour, sunset_hour = calculate_sunrise_sunset(day_of_year)
+    current_hour = london_time.hour + london_time.minute / 60.0
+
+    if sunrise_hour <= current_hour <= sunset_hour:
+        # Daytime
+        if current_hour < (sunrise_hour + 1):  # Sunrise transition
+            t = (current_hour - sunrise_hour) / 1.0
+            background_color = (int(135 + t * 120), int(206 + t * 49), int(250 + t * 5))  # Light blue to almost white
+            line_color = (int(255 - t * 55), int(255 - t * 104), int(255 - t * 245))  # Dark blue to almost black
+        elif current_hour > (sunset_hour - 1):  # Sunset transition
+            t = (current_hour - (sunset_hour - 1)) / 1.0
+            background_color = (int(255 - t * 120), int(255 - t * 49), int(255 - t * 5))  # Almost white to light blue
+            line_color = (int(200 + t * 55), int(151 + t * 104), int(10 + t * 245))  # Almost black to dark blue
+        else:
+            background_color = (255, 255, 255)  # Daytime light background
+            line_color = (0, 0, 0)  # Daytime dark line
+    else:
+        # Nighttime
+        if current_hour < (sunrise_hour - 1):  # Before sunrise transition
+            t = (current_hour + 24 - (sunset_hour + 1)) / (24 - (sunset_hour + 1) + sunrise_hour)
+            background_color = (int(15 + t * 120), int(15 + t * 49), int(30 + t * 5))  # Dark blue to light blue
+            line_color = (int(240 - t * 55), int(240 - t * 104), int(240 - t * 245))  # Light color to dark color
+        elif current_hour > (sunset_hour + 1):  # After sunset transition
+            t = (current_hour - (sunset_hour + 1)) / (24 - (sunset_hour + 1) + sunrise_hour)
+            background_color = (int(135 - t * 120), int(206 - t * 49), int(250 - t * 5))  # Light blue to dark blue
+            line_color = (int(255 - t * 55), int(255 - t * 104), int(255 - t * 245))  # Dark color to light color
+        else:
+            background_color = (0, 0, 0)  # Nighttime dark background
+            line_color = (255, 255, 255)  # Nighttime light line
+
+    return background_color, line_color
 
 def format_headers(headers):
     header_str = ""
@@ -46,7 +98,7 @@ def initialize_output_ffmpeg_process(width, height, fps, output_stream):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frames(ffmpeg_process, output_process, buffer, width, height, fps):
+def process_frames(ffmpeg_process, output_process, buffer, width, height, background_color, line_color):
     while True:
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
@@ -56,16 +108,22 @@ def process_frames(ffmpeg_process, output_process, buffer, width, height, fps):
         
         # Convert raw frame to numpy array
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-        
+        # Blur the frame to get smoother edges
+        blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
         # Convert frame to grayscale
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
         # Apply Canny edge detection
-        edges = cv2.Canny(gray, 100, 200)
-        # Convert edges to BGR format (three channels)
-        frame = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+        edges = cv2.Canny(gray, 300, 400, apertureSize=5)
+        # Smooth edges again
+        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
+        smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+        # Create a background and apply edge color
+        background = np.full_like(frame, background_color)
+        background[smoothed_edges > 0] = line_color
         
         # Append to buffer
-        buffer.append(frame)
+        buffer.append(background)
         
         # Ensure buffer size (6 seconds at 30fps)
         if len(buffer) > 180:
@@ -97,8 +155,7 @@ def main():
 
     while True:
         input_stream = get_dynamic_url()
-        print(input_stream)
-        print(formatted_headers)
+        background_color, line_color = get_colors()
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 640, 480, 30)
         width, height, fps = 640, 480, 30  # Modify these values as needed
@@ -107,7 +164,7 @@ def main():
         start_time = time.time()
 
         while True:
-            process_frames(cap_process, output_process, buffer, width, height, fps)
+            process_frames(cap_process, output_process, buffer, width, height, background_color, line_color)
 
             # Check if the URL needs to be refreshed (6 seconds)
             if time.time() - start_time > 6:
