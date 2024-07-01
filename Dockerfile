@@ -2,7 +2,7 @@
 FROM jrottenberg/ffmpeg:4.1-alpine
 
 # Install Python3, pip, and necessary build tools
-RUN apk add --no-cache python3 py3-pip cmake ninja build-base
+RUN apk add --no-cache python3 py3-pip build-base python3-dev
 
 # Install OpenCV and numpy using pre-built wheels
 RUN pip3 install numpy
@@ -13,5 +13,6 @@ COPY stream_processor.py /usr/local/bin/stream_processor.py
 
 # Set the entry point to run the Python script
 ENTRYPOINT ["python3", "/usr/local/bin/stream_processor.py"]
+
 
 
