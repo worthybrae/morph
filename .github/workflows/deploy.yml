@@ -33,7 +33,7 @@ jobs:
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
-            cd /path/to/your/app
+            cd morph
             git pull
             docker-compose down
             docker-compose up -d

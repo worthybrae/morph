@@ -8,10 +8,8 @@ services:
       - "1935:1935"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /tmp/hls:/tmp/hls
   ffmpeg:
-    image: jrottenberg/ffmpeg:4.1-alpine
-    command: >
-      -re -i https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8
-      -c:v libx264 -preset veryfast -maxrate 1984k -bufsize 3968k
-      -c:a aac -b:a 128k -ac 2
-      -f flv rtmp://nginx:1935/live/stream
+    build: .
+    depends_on:
+      - nginx
