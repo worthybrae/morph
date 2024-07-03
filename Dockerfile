@@ -1,5 +1,5 @@
 # Use a Debian-based image with Python 3.8
-FROM python:3.8-slim
+FROM python:3.9-slim
 
 # Install FFmpeg and dependencies
 RUN apt-get update && apt-get install -y \
