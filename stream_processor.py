@@ -268,8 +268,6 @@ def main():
             output_process.stdin.close()
             output_process.wait()
 
-        time.sleep(4)
-
 if __name__ == "__main__":
     main()
 
