@@ -16,3 +16,11 @@ services:
     restart: unless-stopped
     volumes:
       - /tmp/hls:/tmp/hls
+  hls-server:
+    image: nginx:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - /tmp/hls:/usr/share/nginx/html/hls:ro
+      - ./player:/usr/share/nginx/html:ro
+    restart: unless-stopped
