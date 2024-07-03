@@ -244,7 +244,7 @@ def main():
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
         # Initialize FFmpeg process to capture video with headers
-        cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 640, 480, 30)
+        cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 960, 720, 30)
         width, height, fps = 960, 720, 30  # Modify these values as needed
         output_process = initialize_output_ffmpeg_process(width, height, fps, output_stream)
 

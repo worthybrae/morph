@@ -25,7 +25,3 @@ COPY stream_processor.py /usr/local/bin/stream_processor.py
 
 # Set the entry point to run the Python script
 ENTRYPOINT ["python3", "/usr/local/bin/stream_processor.py"]
-
-
-
-
