@@ -177,8 +177,11 @@ def initialize_output_ffmpeg_process(width, height, fps, output_stream):
         '-c:v', 'libx264',           # Video codec
         '-preset', 'fast',           # Encoding speed/quality tradeoff
         '-pix_fmt', 'yuv420p',       # Output pixel format
-        '-f', 'flv',                 # Output format
-        output_stream
+        '-g', str(fps * 6),          # GOP size (fps * segment duration in seconds)
+        '-hls_time', '6',            # Set HLS segment duration to 6 seconds
+        '-hls_playlist_type', 'event',  # HLS playlist type
+        '-f', 'hls',                 # Output format
+        f'tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
