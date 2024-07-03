@@ -12,6 +12,10 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - app-network
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
 
   ffmpeg:
     build: .
@@ -20,6 +24,10 @@ services:
       - /tmp/hls:/tmp/hls
     networks:
       - app-network
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
 
 networks:
   app-network:
