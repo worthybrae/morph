@@ -17,6 +17,11 @@ RUN pip install --upgrade pip
 # Install numpy and opencv-python-headless using pre-built wheels
 RUN pip install numpy opencv-python-headless
 
+COPY prod_requirements.txt .
+
+# Install any dependencies specified in requirements.txt
+RUN pip install --no-cache-dir -r prod_requirements.txt
+
 # Copy the Python script into the container
 COPY stream_processor.py /usr/local/bin/stream_processor.py
 
