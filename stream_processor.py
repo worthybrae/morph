@@ -19,7 +19,7 @@ def get_color(progress, start_color, end_color, exponent=1):
     c1 = np.array(mcolors.hex2color(start_color))
     c2 = np.array(mcolors.hex2color(end_color))
     color = (1 - progress**exponent) * c1 + progress**exponent * c2
-    return mcolors.to_hex(color)
+    return tuple(int(255 * x) for x in color)
 
 def get_colors():
     london_tz = pytz.timezone('Europe/London')

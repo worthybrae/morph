@@ -14,9 +14,7 @@ RUN apt-get update && apt-get install -y \
 # Upgrade pip to the latest version
 RUN pip install --upgrade pip
 
-# Install numpy and opencv-python-headless using pre-built wheels
-RUN pip install numpy opencv-python-headless
-
+# Copy requirement file into the docker container
 COPY prod_requirements.txt .
 
 # Install any dependencies specified in requirements.txt
