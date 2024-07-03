@@ -8,19 +8,19 @@ services:
       - "1935:1935"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /tmp/hls:/tmp/hls
+      - /tmp/hls:/hls
   ffmpeg:
     build: .
     depends_on:
       - nginx
     restart: unless-stopped
     volumes:
-      - /tmp/hls:/tmp/hls
+      - /tmp/hls:/hls
   hls-server:
     image: nginx:latest
     ports:
       - "8080:80"
     volumes:
-      - /tmp/hls:/usr/share/nginx/html/hls:ro
+      - /tmp/hls:/hls:ro
       - ./player:/usr/share/nginx/html:ro
     restart: unless-stopped
