@@ -12,17 +12,9 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - app-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   ffmpeg:
     build: .
-    depends_on:
-      nginx:
-        condition: service_healthy
     restart: unless-stopped
     volumes:
       - /tmp/hls:/tmp/hls
