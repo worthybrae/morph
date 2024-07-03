@@ -9,10 +9,26 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /tmp/hls:/tmp/hls
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   ffmpeg:
     build: .
     depends_on:
-      - nginx
+      nginx:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
       - /tmp/hls:/tmp/hls
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
