@@ -2,61 +2,145 @@ import cv2
 import numpy as np
 import subprocess
 import time
-from datetime import datetime, timedelta
-import math
+import datetime
+import pytz
+import matplotlib.colors as mcolors
+from astral import LocationInfo
+from astral.sun import sun
 
 
 def get_dynamic_url():
     return f'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w{int(time.time())}.m3u8'
 
-def calculate_sunrise_sunset(day_of_year, latitude=51.5074, longitude=-0.1278):
-    # Approximate sunrise and sunset times based on the day of the year
-    # This is a simplified version and not highly accurate
-    # For London, UK
-    days_from_solstice = day_of_year - 172
-    if days_from_solstice < 0:
-        days_from_solstice += 365
-    
-    sunset_hour = 18 - 2.5 * math.cos(math.radians(days_from_solstice * 360 / 365))
-    sunrise_hour = 6 + 2.5 * math.cos(math.radians(days_from_solstice * 360 / 365))
-    
-    return sunrise_hour, sunset_hour
+def find_midpoint(start_time, end_time):
+    return start_time + (end_time - start_time) / 2
+
+def get_color(progress, start_color, end_color, exponent=1):
+    c1 = np.array(mcolors.hex2color(start_color))
+    c2 = np.array(mcolors.hex2color(end_color))
+    color = (1 - progress**exponent) * c1 + progress**exponent * c2
+    return mcolors.to_hex(color)
 
 def get_colors():
-    now = datetime.now()
-    london_time = now + timedelta(hours=1)  # Adjusting to London time
-    day_of_year = london_time.timetuple().tm_yday
-    
-    sunrise_hour, sunset_hour = calculate_sunrise_sunset(day_of_year)
-    current_hour = london_time.hour + london_time.minute / 60.0
+    london_tz = pytz.timezone('Europe/London')
+    london_datetime = datetime.datetime.now(london_tz)
+    london_old_datetime = datetime.datetime.now(london_tz) - datetime.timedelta(days=1)
+    london_next_datetime = datetime.datetime.now(london_tz) + datetime.timedelta(days=1)
 
-    if sunrise_hour <= current_hour <= sunset_hour:
-        # Daytime
-        if current_hour < (sunrise_hour + 1):  # Sunrise transition
-            t = (current_hour - sunrise_hour) / 1.0
-            background_color = (int(135 + t * 120), int(206 + t * 49), int(250 + t * 5))  # Light blue to almost white
-            line_color = (int(255 - t * 55), int(255 - t * 104), int(255 - t * 245))  # Dark blue to almost black
-        elif current_hour > (sunset_hour - 1):  # Sunset transition
-            t = (current_hour - (sunset_hour - 1)) / 1.0
-            background_color = (int(255 - t * 120), int(255 - t * 49), int(255 - t * 5))  # Almost white to light blue
-            line_color = (int(200 + t * 55), int(151 + t * 104), int(10 + t * 245))  # Almost black to dark blue
-        else:
-            background_color = (255, 255, 255)  # Daytime light background
-            line_color = (0, 0, 0)  # Daytime dark line
+    london_date = london_datetime.date()
+    london_old_date = london_old_datetime.date()
+    london_next_date = london_next_datetime.date()
+
+    city = LocationInfo(latitude=51.537052, longitude=-0.183325)
+    s = sun(city.observer, date=london_date)
+    y = sun(city.observer, date=london_old_date)
+    n = sun(city.observer, date=london_next_date)
+
+    old_dusk = y['dusk'].astimezone(london_tz)
+    current_dawn = s['dawn'].astimezone(london_tz)
+    old_midnight = find_midpoint(old_dusk, current_dawn)
+
+    current_dusk = s['dusk'].astimezone(london_tz)
+    current_sunrise = s['sunrise'].astimezone(london_tz)
+    current_sunset = s['sunset'].astimezone(london_tz)
+    current_noon = find_midpoint(current_sunrise, current_sunset)
+    next_dawn = n['dawn'].astimezone(london_tz)
+    current_midnight = find_midpoint(current_dusk, next_dawn)
+
+    color_lookup = {
+        'midnight': {
+            'line': {
+                'start': '#ced4da',
+                'end': '#f8f9fa'
+            },
+            'background': {
+                'start': '#6c757d',
+                'end': '#212529',
+            },
+            'exponent': 0.25
+        },
+        'dawn': {
+            'line': {
+                'start': '#f8f9fa',
+                'end': '#ced4da'
+            },
+            'background': {
+                'start': '#212529',
+                'end': '#6c757d'
+            },
+            'exponent': 4
+        },
+        'sunrise': {
+            'line': {
+                'start': '#ced4da',
+                'end': '#6c757d'
+            },
+            'background': {
+                'start': '#6c757d',
+                'end': '#ced4da'
+            },
+            'exponent': 4
+        },
+        'afternoon': {
+            'line': {
+                'start': '#6c757d',
+                'end': '#212529'
+            },
+            'background': {
+                'start': '#ced4da',
+                'end': '#f8f9fa'
+            },
+            'exponent': .25
+        },
+        'sunset': {
+            'line': {
+                'start': '#212529',
+                'end': '#6c757d'
+            },
+            'background': {
+                'start': '#f8f9fa',
+                'end': '#ced4da'
+            },
+            'exponent': 4
+        },
+        'dusk': {
+            'line': {
+                'start': '#6c757d',
+                'end': '#ced4da'
+            },
+            'background': {
+                'start': '#ced4da',
+                'end': '#6c757d'
+            },
+            'exponent': .25
+        }
+    }
+
+    if london_datetime <= old_midnight:
+        approaching = 'midnight' 
+        progress = (london_datetime - old_dusk).seconds / (old_midnight - old_dusk).seconds
+    elif london_datetime <= current_dawn:
+        approaching = 'dawn'
+        progress = (london_datetime - old_midnight).seconds / (current_dawn - old_midnight).seconds
+    elif london_datetime <= current_sunrise:
+        approaching = 'sunrise'
+        progress = (london_datetime - current_dawn).seconds / (current_sunrise - current_dawn).seconds
+    elif london_datetime <= current_noon:
+        approaching = 'afternoon'
+        progress = (london_datetime - current_sunrise).seconds / (current_noon - current_sunrise).seconds
+    elif london_datetime <= current_sunset:
+        approaching = 'sunset'
+        progress = (london_datetime - current_noon).seconds / (current_sunset - current_noon).seconds
+    elif london_datetime <= current_dusk:
+        approaching = 'dusk'
+        progress = (london_datetime - current_sunset).seconds / (current_dusk - current_sunset).seconds
+    elif london_datetime <= current_midnight:
+        approaching = 'midnight' 
+        progress = (london_datetime - current_dusk).seconds / (current_midnight - current_dusk).seconds
     else:
-        # Nighttime
-        if current_hour < (sunrise_hour - 1):  # Before sunrise transition
-            t = (current_hour + 24 - (sunset_hour + 1)) / (24 - (sunset_hour + 1) + sunrise_hour)
-            background_color = (int(15 + t * 120), int(15 + t * 49), int(30 + t * 5))  # Dark blue to light blue
-            line_color = (int(240 - t * 55), int(240 - t * 104), int(240 - t * 245))  # Light color to dark color
-        elif current_hour > (sunset_hour + 1):  # After sunset transition
-            t = (current_hour - (sunset_hour + 1)) / (24 - (sunset_hour + 1) + sunrise_hour)
-            background_color = (int(135 - t * 120), int(206 - t * 49), int(250 - t * 5))  # Light blue to dark blue
-            line_color = (int(255 - t * 55), int(255 - t * 104), int(255 - t * 245))  # Dark color to light color
-        else:
-            background_color = (0, 0, 0)  # Nighttime dark background
-            line_color = (255, 255, 255)  # Nighttime light line
-
+        return None
+    line_color = get_color(progress=progress, start_color=color_lookup[approaching]['line']['start'], end_color=color_lookup[approaching]['line']['end'], exponent=color_lookup[approaching]['exponent'])
+    background_color = get_color(progress=progress, start_color=color_lookup[approaching]['background']['start'], end_color=color_lookup[approaching]['background']['end'], exponent=color_lookup[approaching]['exponent'])
     return background_color, line_color
 
 def format_headers(headers):
