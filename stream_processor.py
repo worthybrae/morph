@@ -242,7 +242,7 @@ def main():
         background_color, line_color = get_colors()
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 640, 480, 30)
-        width, height, fps = 640, 480, 30  # Modify these values as needed
+        width, height, fps = 960, 720, 30  # Modify these values as needed
         output_process = initialize_output_ffmpeg_process(width, height, fps, output_stream)
 
         start_time = time.time()
