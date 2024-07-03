@@ -217,6 +217,9 @@ def process_frames(ffmpeg_process, output_process, buffer, width, height, backgr
         output_process.stdin.write(background.tobytes())
 
 def main():
+    # Add a startup delay to ensure nginx is ready
+    time.sleep(30)  # Delay for 60 seconds
+    
     output_stream = 'rtmp://nginx:1935/live/stream'
     buffer = []
 
