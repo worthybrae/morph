@@ -184,7 +184,8 @@ def initialize_output_ffmpeg_process(width, height, fps, output_stream):
         '-g', str(fps * 6),          # GOP size (fps * segment duration in seconds)
         '-hls_time', '6',            # Set HLS segment duration to 6 seconds
         '-hls_playlist_type', 'event',  # HLS playlist type
-        '-hls_list_size', '3',
+        '-hls_list_size', '3',       # max playlist sixe to 3 segments
+        '-hls_flags', 'delete_segments', # allow for playlist to delete old segments
         '-f', 'hls',                 # Output format
         f'tmp/hls/stream.m3u8'
     ]
