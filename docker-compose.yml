@@ -17,6 +17,7 @@ services:
       driver: "local"
       options:
         max-size: "10m"
+        max-file: "3"
 
   ffmpeg:
     build: .
@@ -29,6 +30,7 @@ services:
       driver: "local"
       options:
         max-size: "10m"
+        max-file: "3"
 
 networks:
   app-network:
