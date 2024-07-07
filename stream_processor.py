@@ -7,6 +7,7 @@ import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
+import logging
 
 
 def get_dynamic_url():
@@ -175,60 +176,89 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'fast',
+        '-preset', 'veryfast',  # Faster encoding
+        '-tune', 'zerolatency',  # Optimize for streaming
         '-pix_fmt', 'yuv420p',
         '-profile:v', 'main',
-        '-b:v', '1M',
-        '-maxrate', '1M',
-        '-bufsize', '2M',
-        '-hls_time', '6',  # Reduce segment time for more frequent updates
-        '-hls_list_size', '3',
-        '-hls_flags', 'delete_segments+append_list',  # Ensure old segments are deleted and new ones appended
-        '-hls_segment_type', 'mpegts',  # Use MPEG-TS segments for better compatibility
-        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',  # Name segments with sequential numbers
+        '-b:v', '2M',  # Increase bitrate
+        '-maxrate', '2.5M',
+        '-bufsize', '5M',
+        '-g', '60',  # Set keyframe interval to 2 seconds (assuming 30 fps)
+        '-hls_time', '2',
+        '-hls_list_size', '5',  # Increase list size for smoother playback
+        '-hls_flags', 'delete_segments+append_list+omit_endlist',
+        '-hls_segment_type', 'mpegts',
+        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '-f', 'hls',
         '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frames(ffmpeg_process, output_process, buffer, width, height, background_color, line_color):
+def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
+    frame_buffer = []
+    start_time = time.time()
+    frame_count = 0
+    target_fps = 30
+    
     while True:
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
         if not raw_frame:
-            print("Lost connection to stream, retrying...")
+            logger.warning("Lost connection to stream, retrying...")
             break
         
         # Convert raw frame to numpy array
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-        # Blur the frame to get smoother edges
+        
+        # Process the frame (edge detection, etc.)
         blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
-        # Convert frame to grayscale
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
-        # Apply Canny edge detection
         edges = cv2.Canny(gray, 300, 400, apertureSize=5)
-        # Smooth edges again
-        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
+        kernel = np.ones((2, 2), np.uint8)
         smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
         # Create a background and apply edge color
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
         
-        # Append to buffer
-        buffer.append(background)
+        # Append to frame buffer
+        frame_buffer.append(background)
+        frame_count += 1
         
-        # Ensure buffer size (6 seconds at 30fps)
-        if len(buffer) > 180:
-            buffer.pop(0)
+        # Process frames in batches
+        if len(frame_buffer) >= 30:  # 1 second of frames at 30 fps
+            for frame in frame_buffer:
+                output_process.stdin.write(frame.tobytes())
+            frame_buffer.clear()
         
-        # Write the frame to the FFmpeg output process
-        output_process.stdin.write(background.tobytes())
+        # Ensure consistent frame rate
+        elapsed_time = time.time() - start_time
+        if elapsed_time > 0:
+            current_fps = frame_count / elapsed_time
+            if current_fps > target_fps:
+                time.sleep(1/target_fps)
+        
+        # Log performance every 5 seconds
+        if frame_count % 150 == 0:  # Every 5 seconds at 30 fps
+            current_fps = frame_count / elapsed_time
+            logger.info(f"Current FPS: {current_fps:.2f}, Frames processed: {frame_count}")
+            start_time = time.time()
+            frame_count = 0
+
+    # If the loop breaks, write any remaining frames in the buffer
+    for frame in frame_buffer:
+        output_process.stdin.write(frame.tobytes())
 
 def main():
     # Add a startup delay to ensure nginx is ready
     time.sleep(30)  # Delay for 60 seconds
-    buffer = []
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    width = 960
+    height = 720
+    fps = 30
 
     headers = {
         'Accept': '*/*',
@@ -248,29 +278,23 @@ def main():
     formatted_headers = format_headers(headers)
 
     while True:
-        input_stream = get_dynamic_url()
-        background_color, line_color = get_colors()
-        
-        # Initialize FFmpeg process to capture video with headers
-        cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 960, 720, 30)
-        width, height, fps = 960, 720, 30
-        
-        # Initialize output FFmpeg process once
-        output_process = initialize_output_ffmpeg_process(width, height, fps)
-
-        start_time = time.time()
-
         try:
-            while True:
-                process_frames(cap_process, output_process, buffer, width, height, background_color, line_color)
-
-                # Check if the URL needs to be refreshed (6 seconds)
-                if time.time() - start_time > 6:
-                    break
+            input_stream = get_dynamic_url()
+            background_color, line_color = get_colors()
+            
+            cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
+            output_process = initialize_output_ffmpeg_process(width, height, fps)
+            
+            process_frames(cap_process, output_process, width, height, background_color, line_color)
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+            time.sleep(5)  # Wait before retrying
         finally:
-            cap_process.terminate()
-            output_process.stdin.close()
-            output_process.wait()
+            if 'cap_process' in locals():
+                cap_process.terminate()
+            if 'output_process' in locals():
+                output_process.stdin.close()
+                output_process.wait()
 
 if __name__ == "__main__":
     main()
