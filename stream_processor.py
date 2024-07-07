@@ -180,6 +180,9 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
+        '-g', str(fps * 2),  # Set GOP size to 2 seconds
+        '-keyint_min', str(fps),  # Minimum GOP size of 1 second
+        '-sc_threshold', '0',  # Disable scene change detection
         '-f', 'hls',
         '-hls_time', '2',
         '-hls_list_size', '5',
@@ -190,8 +193,8 @@ def initialize_output_ffmpeg_process(width, height, fps):
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
 def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
-    frame_time = 1 / 30  # Assuming 30 fps
-    next_frame_time = time.time()
+    frames_processed = 0
+    start_time = time.time()
 
     while True:
         # Read raw video frame from FFmpeg process
@@ -217,15 +220,16 @@ def process_frames(ffmpeg_process, output_process, width, height, background_col
         # Write frame to output process
         output_process.stdin.write(background.tobytes())
 
-        # Wait until it's time for the next frame
-        current_time = time.time()
-        if current_time < next_frame_time:
-            time.sleep(next_frame_time - current_time)
-        next_frame_time += frame_time
+        frames_processed += 1
 
-        # Log performance occasionally
-        if int(next_frame_time) % 5 == 0:
-            logger.info(f"Processing frames at {time.time()}")
+        # Log performance every 150 frames (approximately 5 seconds at 30 fps)
+        if frames_processed % 150 == 0:
+            current_time = time.time()
+            elapsed_time = current_time - start_time
+            fps = frames_processed / elapsed_time
+            logger.info(f"Processed {frames_processed} frames. Current FPS: {fps:.2f}")
+            start_time = current_time
+            frames_processed = 0
 
 def main():
     # Add a startup delay to ensure nginx is ready
