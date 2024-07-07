@@ -299,7 +299,7 @@ def main():
             cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
             output_process = initialize_output_ffmpeg_process(width, height, fps)
             
-            process_frames(cap_process, output_process, buffer, width, height, background_color, line_color)
+            process_frames(cap_process, output_process, buffer, width, height, background_color, line_color, logger)
         except Exception as e:
             print(f"An error occurred: {e}")
             time.sleep(5)  # Wait before retrying
