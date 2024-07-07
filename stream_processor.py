@@ -292,23 +292,29 @@ def main():
     formatted_headers = format_headers(headers)
 
     while True:
+        input_stream = get_dynamic_url()
+        background_color, line_color = get_colors()
+        
+        # Initialize FFmpeg process to capture video with headers
+        cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 960, 720, 30)
+        width, height, fps = 960, 720, 30
+        
+        # Initialize output FFmpeg process once
+        output_process = initialize_output_ffmpeg_process(width, height, fps)
+
+        start_time = time.time()
+
         try:
-            input_stream = get_dynamic_url()
-            background_color, line_color = get_colors()
-            
-            cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
-            output_process = initialize_output_ffmpeg_process(width, height, fps)
-            
-            process_frames(cap_process, output_process, buffer, width, height, background_color, line_color, logger)
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            time.sleep(5)  # Wait before retrying
+            while True:
+                process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
+
+                # Check if the URL needs to be refreshed (6 seconds)
+                if time.time() - start_time > 6:
+                    break
         finally:
-            if 'cap_process' in locals():
-                cap_process.terminate()
-            if 'output_process' in locals():
-                output_process.stdin.close()
-                output_process.wait()
+            cap_process.terminate()
+            output_process.stdin.close()
+            output_process.wait()
 
 if __name__ == "__main__":
     main()
