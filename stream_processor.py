@@ -192,44 +192,74 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
-    frames_processed = 0
+def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
+    frame_buffer = []
     start_time = time.time()
-
+    frame_count = 0
+    target_fps = 30
+    
     while True:
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
         if not raw_frame:
             logger.warning("Lost connection to stream, retrying...")
             break
-
+        
         # Convert raw frame to numpy array
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-
-        # Process the frame (edge detection, etc.)
+        
+        # Blur the frame to get smoother edges
         blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
+        
+        # Convert frame to grayscale
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
+        
+        # Apply Canny edge detection
         edges = cv2.Canny(gray, 300, 400, apertureSize=5)
-        kernel = np.ones((2, 2), np.uint8)
+        
+        # Smooth edges again
+        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
         smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
         # Create a background and apply edge color
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
+        
+        # Append to frame buffer
+        frame_buffer.append(background)
+        
+        # Process frames in batches
+        if len(frame_buffer) >= 30:  # 1 second of frames at 30 fps
+            for frame in frame_buffer:
+                output_process.stdin.write(frame.tobytes())
+            frame_buffer.clear()
+        
+        # Append to main buffer
+        buffer.append(background)
+        
+        # Ensure main buffer size (6 seconds at 30fps)
+        if len(buffer) > 180:
+            buffer.pop(0)
+        
+        frame_count += 1
+        
+        # Ensure consistent frame rate
+        elapsed_time = time.time() - start_time
+        if elapsed_time > 0:
+            current_fps = frame_count / elapsed_time
+            if current_fps > target_fps:
+                time.sleep(1/target_fps)
+        
+        # Log performance every 5 seconds
+        if frame_count % 150 == 0:  # Every 5 seconds at 30 fps
+            current_fps = frame_count / elapsed_time
+            logger.info(f"Current FPS: {current_fps:.2f}, Frames processed: {frame_count}")
+            start_time = time.time()
+            frame_count = 0
 
-        # Write frame to output process
-        output_process.stdin.write(background.tobytes())
-
-        frames_processed += 1
-
-        # Log performance every 150 frames (approximately 5 seconds at 30 fps)
-        if frames_processed % 150 == 0:
-            current_time = time.time()
-            elapsed_time = current_time - start_time
-            fps = frames_processed / elapsed_time
-            logger.info(f"Processed {frames_processed} frames. Current FPS: {fps:.2f}")
-            start_time = current_time
-            frames_processed = 0
+    # If the loop breaks, write any remaining frames in the buffer
+    for frame in frame_buffer:
+        output_process.stdin.write(frame.tobytes())
 
 def main():
     # Add a startup delay to ensure nginx is ready
@@ -237,6 +267,8 @@ def main():
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
+
+    buffer = []
 
     width = 960
     height = 720
@@ -267,9 +299,9 @@ def main():
             cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
             output_process = initialize_output_ffmpeg_process(width, height, fps)
             
-            process_frames(cap_process, output_process, width, height, background_color, line_color)
+            process_frames(cap_process, output_process, buffer, width, height, background_color, line_color)
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            print(f"An error occurred: {e}")
             time.sleep(5)  # Wait before retrying
         finally:
             if 'cap_process' in locals():
