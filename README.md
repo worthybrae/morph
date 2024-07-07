@@ -18,10 +18,11 @@ Before you begin, ensure you have the following installed on your system:
 
 ## production setup
 
-### setup digital ocean droplet
+### create digital ocean droplet
 
-```
-ssh -i PATH_TO_PRIVATE_SSH_KEY root@DROPLET_IP_ADDRESS
-snap install docker
-git clone https://github.com/worthybrae/morph.git
-```
+1. create droplet from ubuntu base image
+2. specify ssh key for root login
+3. ssh into digital ocean droplet once created: `ssh -i PATH_TO_PRIVATE_SSH_KEY root@DROPLET_IP_ADDRESS`
+4. install docker / docker-compose: `snap install docker`
+5. git clone https://github.com/worthybrae/morph.git
+6. update your github secrets to reflect the necessary value in the deploy.yml file
