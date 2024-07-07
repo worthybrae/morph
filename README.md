@@ -15,6 +15,7 @@ Before you begin, ensure you have the following installed on your system:
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/install/)
+- [nginx](https://nginx.org/en/)
 
 ## production setup
 
