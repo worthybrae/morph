@@ -176,16 +176,18 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'veryfast',  # Faster encoding
-        '-tune', 'zerolatency',  # Optimize for streaming
+        '-preset', 'veryfast',
+        '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
         '-profile:v', 'main',
-        '-b:v', '2M',  # Increase bitrate
+        '-b:v', '2M',
         '-maxrate', '2.5M',
         '-bufsize', '5M',
-        '-g', '60',  # Set keyframe interval to 2 seconds (assuming 30 fps)
-        '-hls_time', '2',
-        '-hls_list_size', '5',  # Increase list size for smoother playback
+        '-g', str(fps * 2),  # GOP size of 2 seconds
+        '-keyint_min', str(fps),  # Minimum GOP size of 1 second
+        '-sc_threshold', '0',  # Disable scene change detection
+        '-hls_time', '2',  # 2-second segments
+        '-hls_list_size', '5',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_type', 'mpegts',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
@@ -199,55 +201,45 @@ def process_frames(ffmpeg_process, output_process, width, height, background_col
     start_time = time.time()
     frame_count = 0
     target_fps = 30
+    frame_time = 1 / target_fps
     
     while True:
+        frame_start = time.time()
+        
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
         if not raw_frame:
             logger.warning("Lost connection to stream, retrying...")
             break
         
-        # Convert raw frame to numpy array
+        # Convert raw frame to numpy array and process it
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-        
-        # Process the frame (edge detection, etc.)
         blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, 300, 400, apertureSize=5)
         kernel = np.ones((2, 2), np.uint8)
         smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
-        # Create a background and apply edge color
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
         
-        # Append to frame buffer
-        frame_buffer.append(background)
+        # Write frame directly to output process
+        output_process.stdin.write(background.tobytes())
+        
         frame_count += 1
         
-        # Process frames in batches
-        if len(frame_buffer) >= 30:  # 1 second of frames at 30 fps
-            for frame in frame_buffer:
-                output_process.stdin.write(frame.tobytes())
-            frame_buffer.clear()
-        
         # Ensure consistent frame rate
-        elapsed_time = time.time() - start_time
-        if elapsed_time > 0:
-            current_fps = frame_count / elapsed_time
-            if current_fps > target_fps:
-                time.sleep(1/target_fps)
+        process_time = time.time() - frame_start
+        if process_time < frame_time:
+            time.sleep(frame_time - process_time)
         
         # Log performance every 5 seconds
-        if frame_count % 150 == 0:  # Every 5 seconds at 30 fps
+        if frame_count % 150 == 0:
+            elapsed_time = time.time() - start_time
             current_fps = frame_count / elapsed_time
             logger.info(f"Current FPS: {current_fps:.2f}, Frames processed: {frame_count}")
             start_time = time.time()
             frame_count = 0
-
-    # If the loop breaks, write any remaining frames in the buffer
-    for frame in frame_buffer:
-        output_process.stdin.write(frame.tobytes())
 
 def main():
     # Add a startup delay to ensure nginx is ready
