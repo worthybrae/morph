@@ -165,29 +165,29 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
 
-def initialize_output_ffmpeg_process(width, height, fps, output_stream):
+def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
         'ffmpeg',
-        '-y',                        # Overwrite output files without asking
-        '-f', 'rawvideo',            # Input format type
-        '-pix_fmt', 'bgr24',         # Input pixel format
-        '-s', f'{width}x{height}',   # Input size
-        '-r', str(fps),              # Input frame rate
-        '-i', '-',                   # Input comes from a pipe
-        '-c:v', 'libx264',           # Video codec
-        '-preset', 'fast',           # Encoding speed/quality tradeoff
-        '-pix_fmt', 'yuv420p',       # Output pixel format
-        '-profile:v', 'main',        # Set the encoding profile
-        '-b:v', '1M',                # Set the target bitrate (e.g., 1 Mbps)
-        '-maxrate', '1M',            # Set the max bitrate
+        '-y',
+        '-f', 'rawvideo',
+        '-pix_fmt', 'bgr24',
+        '-s', f'{width}x{height}',
+        '-r', str(fps),
+        '-i', '-',
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-pix_fmt', 'yuv420p',
+        '-profile:v', 'main',
+        '-b:v', '1M',
+        '-maxrate', '1M',
         '-bufsize', '2M',
-        '-hls_playlist_type', 'event',  # HLS playlist type
-        '-hls_list_size', '3',       # max playlist sixe to 3 segments
-        '-hls_flags', 'delete_segments', # allow for playlist to delete old segments
-        '-f', 'hls',                 # Output format
-        '-hls_time', '6',
+        '-hls_time', '6',  # Reduce segment time for more frequent updates
         '-hls_list_size', '3',
-        f'/tmp/hls/stream.m3u8'
+        '-hls_flags', 'delete_segments+append_list',  # Ensure old segments are deleted and new ones appended
+        '-hls_segment_type', 'mpegts',  # Use MPEG-TS segments for better compatibility
+        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',  # Name segments with sequential numbers
+        '-f', 'hls',
+        '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
@@ -228,8 +228,6 @@ def process_frames(ffmpeg_process, output_process, buffer, width, height, backgr
 def main():
     # Add a startup delay to ensure nginx is ready
     time.sleep(30)  # Delay for 60 seconds
-    
-    output_stream = 'rtmp://nginx:1935/live/stream'
     buffer = []
 
     headers = {
@@ -252,28 +250,25 @@ def main():
     while True:
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
+        
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 960, 720, 30)
-        width, height, fps = 960, 720, 30  # Modify these values as needed
-        output_process = initialize_output_ffmpeg_process(width, height, fps, output_stream)
+        width, height, fps = 960, 720, 30
+        
+        # Initialize output FFmpeg process once
+        output_process = initialize_output_ffmpeg_process(width, height, fps)
 
         start_time = time.time()
 
-        while True:
-            process_frames(cap_process, output_process, buffer, width, height, background_color, line_color)
+        try:
+            while True:
+                process_frames(cap_process, output_process, buffer, width, height, background_color, line_color)
 
-            # Check if the URL needs to be refreshed (6 seconds)
-            if time.time() - start_time > 6:
-                break
-
-        cap_process.terminate()
-        output_process.stdin.close()
-        output_process.wait()
-
-        # Output buffered frames to smooth transition
-        for frame in buffer:
-            output_process = initialize_output_ffmpeg_process(width, height, fps, output_stream)
-            output_process.stdin.write(frame.tobytes())
+                # Check if the URL needs to be refreshed (6 seconds)
+                if time.time() - start_time > 6:
+                    break
+        finally:
+            cap_process.terminate()
             output_process.stdin.close()
             output_process.wait()
 
