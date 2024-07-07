@@ -185,6 +185,8 @@ def initialize_output_ffmpeg_process(width, height, fps, output_stream):
         '-hls_list_size', '3',       # max playlist sixe to 3 segments
         '-hls_flags', 'delete_segments', # allow for playlist to delete old segments
         '-f', 'hls',                 # Output format
+        '-hls_time', '6',
+        '-hls_list_size', '3',
         f'/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
