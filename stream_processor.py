@@ -180,11 +180,9 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        '-g', str(fps * 2),  # Set GOP size to 2 seconds
-        '-keyint_min', str(fps),  # Minimum GOP size of 1 second
+
         '-sc_threshold', '0',  # Disable scene change detection
         '-f', 'hls',
-        '-hls_time', '2',
         '-hls_list_size', '5',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
