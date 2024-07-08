@@ -193,6 +193,11 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
     start_time = time.time()
     frame_count = 0
     target_fps = 30
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1
+    line_type = 2
+    text_space = 50  # Space for text
     
     while True:
         # Read raw video frame from FFmpeg process
@@ -220,42 +225,32 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         # Create a background and apply edge color
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
+
+        frame_with_border = cv2.copyMakeBorder(background, text_space, text_space, 0, 0, cv2.BORDER_CONSTANT, value=background_color)
+        
+        # Current time
+        current_time = datetime.datetime.now().strftime("%I:%M %p")
+        (text_width, text_height), _ = cv2.getTextSize(current_time, font, font_scale, line_type)
+
+        # Draw "Abbey Road" text
+        cv2.putText(frame_with_border, 'Abbey Road', ((frame_with_border.shape[1] - text_width) // 2, text_space // 2 + text_height // 2), font, font_scale, line_color, line_type)
+
+        # Draw current time
+        cv2.putText(frame_with_border, current_time, ((frame_with_border.shape[1] - text_width) // 2, frame_with_border.shape[0] - text_space // 2 + text_height // 2), font, font_scale, line_color, line_type)
+
+        # Append to frame buffer
+        frame_buffer.append(frame_with_border)
         
         # Append to frame buffer
         frame_buffer.append(background)
         
         # Process frames in batches
-        if len(frame_buffer) >= 30:  # 1 second of frames at 30 fps
+        if len(frame_buffer) == 120:  # 1 second of frames at 30 fps
             for frame in frame_buffer:
                 output_process.stdin.write(frame.tobytes())
             frame_buffer.clear()
         
-        # Append to main buffer
-        buffer.append(background)
         
-        # Ensure main buffer size (6 seconds at 30fps)
-        if len(buffer) > 180:
-            buffer.pop(0)
-        
-        frame_count += 1
-        
-        # Ensure consistent frame rate
-        elapsed_time = time.time() - start_time
-        if elapsed_time > 0:
-            current_fps = frame_count / elapsed_time
-            if current_fps > target_fps:
-                time.sleep(1/target_fps)
-        
-        # Log performance every 5 seconds
-        if frame_count % 150 == 0:  # Every 5 seconds at 30 fps
-            current_fps = frame_count / elapsed_time
-            logger.info(f"Current FPS: {current_fps:.2f}, Frames processed: {frame_count}")
-            start_time = time.time()
-            frame_count = 0
-
-    # If the loop breaks, write any remaining frames in the buffer
-    for frame in frame_buffer:
-        output_process.stdin.write(frame.tobytes())
 
 def main():
     # Add a startup delay to ensure nginx is ready
@@ -266,7 +261,7 @@ def main():
 
     buffer = []
 
-    width = 960
+    width = 1280
     height = 720
     fps = 30
 
