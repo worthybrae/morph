@@ -180,6 +180,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
+        '-sc_threshold', '0',  # Disable scene change detection
         '-f', 'hls',
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
