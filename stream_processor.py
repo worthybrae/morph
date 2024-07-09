@@ -8,6 +8,7 @@ import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 
 def get_dynamic_url():
@@ -176,64 +177,45 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'fast',  # Slower preset for better compression
-        '-tune', 'film',  # Adjust for content type, change if needed
-        '-crf', '23',  # Constant Rate Factor for variable bitrate control
-        '-maxrate', '1000k',  # Maximum bitrate
-        '-bufsize', '2000k',  # Buffer size
+        '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
+        '-crf', '23',
+        '-maxrate', '2000k',
+        '-bufsize', '4000k',
+        '-g', str(fps),
+        '-keyint_min', str(fps),
+        '-sc_threshold', '0',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-hls_time', '1',
-        '-hls_list_size', '20',
+        '-hls_time', '2',
+        '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
-    frame_buffer = []
+def process_frame(frame, background_color, line_color):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 300, 400)
+    background = np.full_like(frame, background_color)
+    background[edges > 0] = line_color
+    return background
 
-    while True:
-        # Read raw video frame from FFmpeg process
-        raw_frame = ffmpeg_process.stdout.read(width * height * 3)
-        if not raw_frame:
-            logger.warning("Lost connection to stream, retrying...")
-            break
-        
-        # Convert raw frame to numpy array
-        frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-        
-        # Blur the frame to get smoother edges
-        blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
-        
-        # Convert frame to grayscale
-        gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
-        
-        # Apply Canny edge detection
-        edges = cv2.Canny(gray, 300, 400, apertureSize=5)
-        
-        # Smooth edges again
-        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
-        smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
-
-        # Create a background and apply edge color
-        background = np.full_like(frame, background_color)
-        background[smoothed_edges > 0] = line_color
-
-        # Append to frame buffer
-        frame_buffer.append(background)
-        
-        # Process frames in batches
-        if len(frame_buffer) == 30: 
-            for f in frame_buffer:
-                output_process.stdin.write(f.tobytes())
-            frame_buffer.clear()
-
-    for frame in frame_buffer:
-        output_process.stdin.write(frame.tobytes())
-    frame_buffer.clear()
-        
+def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        while True:
+            raw_frame = ffmpeg_process.stdout.read(width * height * 3)
+            if not raw_frame:
+                logger.warning("Lost connection to stream, retrying...")
+                break
+            
+            frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
+            
+            future = executor.submit(process_frame, frame, background_color, line_color)
+            processed_frame = future.result()
+            
+            output_process.stdin.write(processed_frame.tobytes())
         
 
 def main():
