@@ -178,7 +178,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
-        '-c:v', 'h264_nvenc',  # Use NVIDIA GPU encoding
+        '-c:v', 'libx264',  # Use CPU encoding
         '-preset', 'p1',  # Fastest preset for NVENC
         '-tune', 'ull',  # Ultra-low latency tuning
         '-rc', 'cbr',  # Constant bitrate for smoother streaming
