@@ -208,7 +208,7 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
         
         # Apply Canny edge detection
-        edges = cv2.Canny(gray, 10, 20, apertureSize=7)
+        edges = cv2.Canny(gray, 300, 400, apertureSize=5)
         
         # Smooth edges again
         kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
@@ -222,7 +222,7 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         frame_buffer.append(background)
         
         # Process frames in batches
-        if len(frame_buffer) == 180:  # 2 seconds of frames at 30 fps
+        if len(frame_buffer) == 180: 
             for f in frame_buffer:
                 output_process.stdin.write(f.tobytes())
             frame_buffer.clear()
@@ -266,7 +266,6 @@ def main():
     while True:
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
-        
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
         
