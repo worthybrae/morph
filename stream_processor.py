@@ -159,12 +159,11 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
         '-f', 'rawvideo',
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
-        '-r', str(fps),
         '-an',
         '-c:v', 'rawvideo',
         '-'
     ]
-    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
+    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**9)
 
 def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
@@ -266,24 +265,18 @@ def main():
 
     formatted_headers = format_headers(headers)
 
+    # Initialize output FFmpeg process once
+    output_process = initialize_output_ffmpeg_process(width, height, fps)
+
     while True:
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
-        
-        # Initialize output FFmpeg process once
-        output_process = initialize_output_ffmpeg_process(width, height, fps)
-
-        start_time = time.time()
 
         try:
-            while True:
-                process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
-
-                # Check if the URL needs to be refreshed (6 seconds)
-                if time.time() - start_time > 6:
-                    break
+            process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
+            print(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
         finally:
             cap_process.terminate()
             output_process.stdin.close()
