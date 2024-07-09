@@ -13,9 +13,6 @@ from concurrent.futures import wait, FIRST_COMPLETED
 import os
 
 
-def ensure_hls_directory(path):
-    os.makedirs(path, exist_ok=True)
-
 def get_dynamic_url():
     return f'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w{int(time.time())}.m3u8'
 
@@ -198,9 +195,9 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-hls_list_size', '5',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_type', 'mpegts',
-        '-hls_segment_filename', '/tmp/snap-private-tmp/snap.docker/tmp/hls/stream%03d.ts',
+        '-hls_segment_filename', 'tmp/hls/stream%03d.ts',
         '-force_key_frames', 'expr:gte(t,n_forced*1)',
-        '/tmp/snap-private-tmp/snap.docker/tmp/hls/stream.m3u8'
+        'tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
@@ -279,6 +276,4 @@ def main():
     output_process.wait()
 
 if __name__ == "__main__":
-    hls_path = '/tmp/snap-private-tmp/snap.docker/tmp/hls'
-    ensure_hls_directory(hls_path)
     main()
