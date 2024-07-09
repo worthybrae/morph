@@ -222,7 +222,7 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         frame_buffer.append(background)
         
         # Process frames in batches
-        if len(frame_buffer) == 360:  # 2 seconds of frames at 30 fps
+        if len(frame_buffer) == 180:  # 2 seconds of frames at 30 fps
             for f in frame_buffer:
                 output_process.stdin.write(f.tobytes())
             frame_buffer.clear()
