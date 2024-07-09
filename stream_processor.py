@@ -192,7 +192,12 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
     frame_buffer = []
-    
+    text_space = 50  # Space for text
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1
+    line_type = 2
+
     while True:
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
@@ -220,8 +225,23 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
 
+        # Add border for text
+        frame_with_border = cv2.copyMakeBorder(background, 0, text_space, 0, 0, cv2.BORDER_CONSTANT, value=background_color)
+        
+        # Current time
+        current_time = datetime.datetime.now().strftime("%I:%M %p")
+        (text_width, text_height), _ = cv2.getTextSize(current_time, font, font_scale, line_type)
+
+        # Draw "Abbey Road" text centered horizontally above the frame
+        abbey_road_text = "Abbey Road"
+        (abbey_road_text_width, abbey_road_text_height), _ = cv2.getTextSize(abbey_road_text, font, font_scale, line_type)
+        cv2.putText(frame_with_border, abbey_road_text, ((frame_with_border.shape[1] - abbey_road_text_width) // 2, text_space // 2 + abbey_road_text_height // 2), font, font_scale, line_color, line_type)
+
+        # Draw current time centered horizontally below the frame
+        cv2.putText(frame_with_border, current_time, ((frame_with_border.shape[1] - text_width) // 2, frame_with_border.shape[0] - text_space // 2 + text_height // 2), font, font_scale, line_color, line_type)
+
         # Append to frame buffer
-        frame_buffer.append(background)
+        frame_buffer.append(frame_with_border)
         
         # Process frames in batches
         if len(frame_buffer) == 180: 
@@ -277,6 +297,7 @@ def main():
         try:
             process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
             print(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
+            logger.log(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
         finally:
             cap_process.terminate()
             output_process.stdin.close()
