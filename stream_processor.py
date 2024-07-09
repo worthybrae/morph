@@ -185,16 +185,13 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-maxrate', '3M',
         '-bufsize', '6M',
         '-g', str(fps),
-        '-keyint_min', str(fps),
-        '-sc_threshold', '0',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-hls_time', '2',  # 1-second segments for lower latency
-        '-hls_list_size', '5',
+        '-hls_time', '1',  # 1-second segments for lower latency
+        '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_type', 'mpegts',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '-force_key_frames', 'expr:gte(t,n_forced*1)',
         '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
