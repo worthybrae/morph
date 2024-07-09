@@ -167,7 +167,7 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
         '-threads', '0',  # Use all available CPU threads
         '-'
     ]
-    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
+    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
 
 def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
@@ -199,7 +199,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-force_key_frames', 'expr:gte(t,n_forced*1)',
         '/tmp/hls/stream.m3u8'
     ]
-    return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
+    return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def process_frame(frame, background_color, line_color):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -271,9 +271,6 @@ def main():
         finally:
             cap_process.terminate()
             time.sleep(5)  # Wait before reconnecting
-
-    output_process.stdin.close()
-    output_process.wait()
 
 if __name__ == "__main__":
     main()
