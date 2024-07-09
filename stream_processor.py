@@ -188,7 +188,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
         '-hls_time', '2',  # 2-second segments
-        '-hls_list_size', '5',
+        '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list',
         '-hls_segment_type', 'mpegts',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
@@ -199,7 +199,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frame(frame, background_color, line_color):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 300, 400, apertureSize=5)
+    edges = cv2.Canny(gray, 200, 600, apertureSize=3)
     background = np.full_like(frame, background_color)
     background[edges > 0] = line_color
     return background
