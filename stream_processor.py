@@ -182,15 +182,17 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-crf', '23',
         '-maxrate', '2000k',
         '-bufsize', '4000k',
-        '-g', str(fps),
+        '-g', str(fps * 2),  # GOP size: 2 seconds
         '-keyint_min', str(fps),
         '-sc_threshold', '0',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-hls_time', '2',
-        '-hls_list_size', '10',
-        '-hls_flags', 'delete_segments+append_list+omit_endlist',
+        '-hls_time', '2',  # 2-second segments
+        '-hls_list_size', '5',
+        '-hls_flags', 'delete_segments+append_list',
+        '-hls_segment_type', 'mpegts',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
+        '-force_key_frames', f'expr:gte(t,n_forced*{2})',
         '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
@@ -225,8 +227,6 @@ def main():
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    buffer = []
-
     width = 1080
     height = 720
     fps = 30
@@ -258,7 +258,7 @@ def main():
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
 
         try:
-            process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
+            process_frames(cap_process, output_process, width, height, background_color, line_color, logger)
             print(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
             logger.log(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
         finally:
