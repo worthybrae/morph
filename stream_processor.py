@@ -176,14 +176,15 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'slow',  # Slower preset for better compression
+        '-preset', 'fast',  # Slower preset for better compression
         '-tune', 'film',  # Adjust for content type, change if needed
         '-crf', '23',  # Constant Rate Factor for variable bitrate control
         '-maxrate', '1000k',  # Maximum bitrate
         '-bufsize', '2000k',  # Buffer size
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-hls_list_size', '10',
+        '-hls_time', '1',
+        '-hls_list_size', '20',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
@@ -192,11 +193,6 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
     frame_buffer = []
-    text_space = 50  # Space for text
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1
-    line_type = 2
 
     while True:
         # Read raw video frame from FFmpeg process
@@ -227,9 +223,16 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
 
         # Append to frame buffer
         frame_buffer.append(background)
+        
+        # Process frames in batches
+        if len(frame_buffer) == 30: 
+            for f in frame_buffer:
+                output_process.stdin.write(f.tobytes())
+            frame_buffer.clear()
 
     for frame in frame_buffer:
         output_process.stdin.write(frame.tobytes())
+    frame_buffer.clear()
         
         
 
