@@ -202,16 +202,16 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
 
         # Blur the frame to get smoother edges
-        blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
+        blurred_frame = cv2.GaussianBlur(frame, (5, 5), 0)  # Reduce blur intensity
 
         # Convert frame to grayscale
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
 
-        # Apply Canny edge detection
-        edges = cv2.Canny(gray, 50, 150)
+        # Apply Canny edge detection with adjusted thresholds
+        edges = cv2.Canny(gray, 50, 100)  # Lower the thresholds for more sensitivity
 
-        # Detect lines using Hough Line Transform
-        lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
+        # Detect lines using Hough Line Transform with adjusted parameters
+        lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=50, minLineLength=50, maxLineGap=20)  # Lower threshold and minLineLength, increase maxLineGap
 
         # Create a background
         background = np.full_like(frame, background_color)
