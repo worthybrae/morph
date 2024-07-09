@@ -201,52 +201,92 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
-def process_frame(frame, background_color, line_color):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 800, 825, apertureSize=5)
-    background = np.full_like(frame, background_color, dtype=np.uint8)
-    background[edges > 0] = line_color
-    return background
+async def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
+    frame_buffer = []
+    text_space = 50  # Space for text
 
-def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
-    frame_size = width * height * 3
-    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-        futures = []
-        while True:
-            raw_frame = ffmpeg_process.stdout.read(frame_size)
-            if not raw_frame:
-                logger.warning("Lost connection to stream, retrying...")
-                break
-            
-            frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-            future = executor.submit(process_frame, frame, background_color, line_color)
-            futures.append(future)
-            
-            while len(futures) >= 2 * os.cpu_count():
-                done, futures = wait(futures, return_when=FIRST_COMPLETED)
-                for completed_future in done:
-                    processed_frame = completed_future.result()
-                    try:
-                        output_process.stdin.write(processed_frame.tobytes())
-                    except BrokenPipeError:
-                        logger.error("Output FFmpeg process terminated unexpectedly.")
-                        return
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1
+    line_type = 2
+
+    target_fps = 30
+    frame_duration = 1 / target_fps
+
+    while True:
+        start_time = time.time()
         
-        for future in as_completed(futures):
-            processed_frame = future.result()
-            try:
-                output_process.stdin.write(processed_frame.tobytes())
-            except BrokenPipeError:
-                logger.error("Output FFmpeg process terminated unexpectedly.")
-                return
+        # Read raw video frame from FFmpeg process
+        raw_frame = ffmpeg_process.stdout.read(width * height * 3)
+        if not raw_frame:
+            logger.warning("Lost connection to stream, retrying...")
+            break
+        
+        # Convert raw frame to numpy array
+        frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
+        
+        # Blur the frame to get smoother edges
+        blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
+        
+        # Convert frame to grayscale
+        gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
+        
+        # Apply Canny edge detection
+        edges = cv2.Canny(gray, 300, 400, apertureSize=5)
+        
+        # Smooth edges again
+        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
+        smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+        # Create a background and apply edge color
+        background = np.full_like(frame, background_color)
+        background[smoothed_edges > 0] = line_color
+
+        # Add border for text
+        frame_with_border = cv2.copyMakeBorder(background, 0, text_space, 0, 0, cv2.BORDER_CONSTANT, value=background_color)
+        
+        # Current time
+        current_time = datetime.datetime.now().strftime("%I:%M %p")
+        (text_width, text_height), _ = cv2.getTextSize(current_time, font, font_scale, line_type)
+
+        # Draw "Abbey Road" text centered horizontally above the frame
+        abbey_road_text = "Abbey Road"
+        (abbey_road_text_width, abbey_road_text_height), _ = cv2.getTextSize(abbey_road_text, font, font_scale, line_type)
+        cv2.putText(frame_with_border, abbey_road_text, ((frame_with_border.shape[1] - abbey_road_text_width) // 2, text_space // 2 + abbey_road_text_height // 2), font, font_scale, line_color, line_type)
+
+        # Draw current time centered horizontally below the frame
+        cv2.putText(frame_with_border, current_time, ((frame_with_border.shape[1] - text_width) // 2, frame_with_border.shape[0] - text_space // 2 + text_height // 2), font, font_scale, line_color, line_type)
+
+        # Append to frame buffer
+        frame_buffer.append(frame_with_border)
+
+        # Calculate the time taken for processing
+        processing_time = time.time() - start_time
+        
+        # Ensure consistent frame rate
+        await asyncio.sleep(max(0, frame_duration - processing_time))
+        
+        # Process frames in batches
+        if len(frame_buffer) == 180:  # Adjust based on desired batch size
+            for f in frame_buffer:
+                output_process.stdin.write(f.tobytes())
+            frame_buffer.clear()
+
+    for frame in frame_buffer:
+        output_process.stdin.write(frame.tobytes())
+    frame_buffer.clear()
 
 def main():
-    time.sleep(30)  # Startup delay
+    # Add a startup delay to ensure nginx is ready
+    time.sleep(30)  # Delay for 30 seconds
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    width, height, fps = 1080, 720, 30
+    buffer = []
+
+    width = 960
+    height = 720
+    fps = 30
 
     headers = {
         'Accept': '*/*',
@@ -265,20 +305,25 @@ def main():
 
     formatted_headers = format_headers(headers)
 
+    # Initialize output FFmpeg process once
     output_process = initialize_output_ffmpeg_process(width, height, fps)
 
     while True:
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
+        
+        # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
-
+        
         try:
-            process_frames(cap_process, output_process, width, height, background_color, line_color, logger)
-        except Exception as e:
-            logger.error(f"Error processing frames: {e}")
+            while True:
+                process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
+
+                
         finally:
             cap_process.terminate()
-            time.sleep(5)  # Wait before reconnecting
+            output_process.stdin.close()
+            output_process.wait()
 
 if __name__ == "__main__":
     main()
