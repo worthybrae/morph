@@ -181,7 +181,6 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-hls_time', '6',
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
@@ -203,13 +202,13 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
         
         # Blur the frame to get smoother edges
-        blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
+        blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
         
         # Convert frame to grayscale
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
         
         # Apply Canny edge detection
-        edges = cv2.Canny(gray, 100, 200, apertureSize=7)
+        edges = cv2.Canny(gray, 10, 20, apertureSize=7)
         
         # Smooth edges again
         kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
@@ -223,7 +222,7 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         frame_buffer.append(background)
         
         # Process frames in batches
-        if len(frame_buffer) == 540:  # 6 seconsd of frames at 30 fps
+        if len(frame_buffer) == 360:  # 2 seconds of frames at 30 fps
             for f in frame_buffer:
                 output_process.stdin.write(f.tobytes())
             frame_buffer.clear()
