@@ -8,7 +8,6 @@ import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
 import logging
-import asyncio
 
 
 def get_dynamic_url():
@@ -160,10 +159,12 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
         '-f', 'rawvideo',
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
+        '-r', str(fps),
+        '-an',
         '-c:v', 'rawvideo',
         '-'
     ]
-    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**9)
+    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
 
 def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
@@ -176,11 +177,9 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'slow',  # Slower preset for better compression
-        '-tune', 'film',  # Adjust for content type, change if needed
-        '-crf', '23',  # Constant Rate Factor for variable bitrate control
-        '-maxrate', '3M',  # Maximum bitrate
-        '-bufsize', '6M',  # Buffer size
+        '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
+        '-pix_fmt', 'yuv420p',
         '-f', 'hls',
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
@@ -191,7 +190,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
     frame_buffer = []
-
+    
     while True:
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
@@ -221,9 +220,16 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
 
         # Append to frame buffer
         frame_buffer.append(background)
+        
+        # Process frames in batches
+        if len(frame_buffer) == 180: 
+            for f in frame_buffer:
+                output_process.stdin.write(f.tobytes())
+            frame_buffer.clear()
 
     for frame in frame_buffer:
         output_process.stdin.write(frame.tobytes())
+    frame_buffer.clear()
         
         
 
@@ -257,19 +263,24 @@ def main():
 
     formatted_headers = format_headers(headers)
 
-    # Initialize output FFmpeg process once
-    output_process = initialize_output_ffmpeg_process(width, height, fps)
-
     while True:
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
+        
+        # Initialize output FFmpeg process once
+        output_process = initialize_output_ffmpeg_process(width, height, fps)
+
+        start_time = time.time()
 
         try:
-            process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
-            print(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
-            logger.log(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
+            while True:
+                process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
+
+                # Check if the URL needs to be refreshed (6 seconds)
+                if time.time() - start_time > 6:
+                    break
         finally:
             cap_process.terminate()
             output_process.stdin.close()
