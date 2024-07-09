@@ -162,7 +162,7 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
         '-an',
-        '-c:v', 'h264_cuvid',  # Use NVIDIA GPU decoding
+        '-c:v', 'libx264',  # Use NVIDIA GPU decoding
         '-threads', '0',  # Use all available CPU threads
         '-'
     ]
