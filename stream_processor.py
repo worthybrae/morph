@@ -8,7 +8,8 @@ import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import wait, FIRST_COMPLETED
 
 
 def get_dynamic_url():
@@ -199,24 +200,34 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frame(frame, background_color, line_color):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 350, 375, apertureSize=5)
+    edges = cv2.Canny(gray, 800, 825, apertureSize=5)
     background = np.full_like(frame, background_color)
     background[edges > 0] = line_color
     return background
 
 def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    frame_size = (height, width, 3)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = []
         while True:
             raw_frame = ffmpeg_process.stdout.read(width * height * 3)
             if not raw_frame:
                 logger.warning("Lost connection to stream, retrying...")
                 break
             
-            frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-            
+            frame = np.frombuffer(raw_frame, np.uint8).reshape(frame_size)
             future = executor.submit(process_frame, frame, background_color, line_color)
-            processed_frame = future.result()
+            futures.append(future)
             
+            if len(futures) == 30:  # Limit the number of queued frames to prevent memory overflow
+                done, futures = wait(futures, return_when=FIRST_COMPLETED)
+                for completed_future in done:
+                    processed_frame = completed_future.result()
+                    output_process.stdin.write(processed_frame.tobytes())
+        
+        # Ensure all frames are processed and written out
+        for future in as_completed(futures):
+            processed_frame = future.result()
             output_process.stdin.write(processed_frame.tobytes())
         
 
