@@ -227,6 +227,10 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
             for frame in frame_buffer:
                 output_process.stdin.write(frame.tobytes())
             frame_buffer.clear()
+
+    for frame in frame_buffer:
+        output_process.stdin.write(frame.tobytes())
+    frame_buffer.clear()
         
         
 
@@ -239,8 +243,8 @@ def main():
 
     buffer = []
 
-    width = 1920
-    height = 1080
+    width = 1080
+    height = 720
     fps = 30
 
     headers = {
@@ -265,8 +269,7 @@ def main():
         background_color, line_color = get_colors()
         
         # Initialize FFmpeg process to capture video with headers
-        cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, 960, 720, 30)
-        width, height, fps = 960, 720, 30
+        cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
         
         # Initialize output FFmpeg process once
         output_process = initialize_output_ffmpeg_process(width, height, fps)
