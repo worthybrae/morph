@@ -199,19 +199,19 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
             logger.warning("Lost connection to stream, retrying...")
             break
         
-        # Convert raw frame to numpy array
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-        
+
         # Blur the frame to get smoother edges
         blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
-        
+
         # Convert frame to grayscale
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
-        
-        # Apply Canny edge detection
-        edges = cv2.Canny(gray, 300, 400, apertureSize=5)
-        
-        # Smooth edges again
+
+        # Apply Laplacian edge detection
+        edges = cv2.Laplacian(gray, cv2.CV_64F)
+        edges = np.uint8(np.absolute(edges))
+
+        # Smooth edges again (if needed)
         kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
         smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
@@ -224,8 +224,8 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         
         # Process frames in batches
         if len(frame_buffer) == 150:  # 1 second of frames at 30 fps
-            for frame in frame_buffer:
-                output_process.stdin.write(frame.tobytes())
+            for f in frame_buffer:
+                output_process.stdin.write(f.tobytes())
             frame_buffer.clear()
 
     for frame in frame_buffer:
