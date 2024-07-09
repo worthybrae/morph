@@ -195,9 +195,9 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-hls_list_size', '5',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_type', 'mpegts',
-        '-hls_segment_filename', 'tmp/hls/stream%03d.ts',
+        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '-force_key_frames', 'expr:gte(t,n_forced*1)',
-        'tmp/hls/stream.m3u8'
+        '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
