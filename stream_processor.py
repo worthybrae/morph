@@ -181,7 +181,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-tune', 'zerolatency',
         '-crf', '23',
         '-maxrate', '2000k',
-        '-bufsize', '4000k',
+        '-bufsize', '8000k',
         '-g', str(fps * 2),  # GOP size: 2 seconds
         '-keyint_min', str(fps),
         '-sc_threshold', '0',
@@ -199,9 +199,16 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frame(frame, background_color, line_color):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 200, 600, apertureSize=3)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=5)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, minLineLength=50, maxLineGap=10)
+    
     background = np.full_like(frame, background_color)
-    background[edges > 0] = line_color
+    
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(background, (x1, y1), (x2, y2), line_color, 2)
+    
     return background
 
 def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
