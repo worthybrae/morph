@@ -207,17 +207,20 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         # Convert frame to grayscale
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
 
-        # Apply Laplacian edge detection
-        edges = cv2.Laplacian(gray, cv2.CV_64F)
-        edges = np.uint8(np.absolute(edges))
+        # Apply Canny edge detection
+        edges = cv2.Canny(gray, 50, 150)
 
-        # Smooth edges again (if needed)
-        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
-        smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+        # Detect lines using Hough Line Transform
+        lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
 
-        # Create a background and apply edge color
+        # Create a background
         background = np.full_like(frame, background_color)
-        background[smoothed_edges > 0] = line_color
+
+        # Draw the detected lines on the background
+        if lines is not None:
+            lines = lines.reshape(-1, 4)  # Flatten the array for faster processing
+            for x1, y1, x2, y2 in lines:
+                cv2.line(background, (x1, y1), (x2, y2), line_color, 2)
 
         # Append to frame buffer
         frame_buffer.append(background)
