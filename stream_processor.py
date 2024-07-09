@@ -199,7 +199,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frame(frame, background_color, line_color):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 300, 400)
+    edges = cv2.Canny(gray, 300, 400, apertureSize=5)
     background = np.full_like(frame, background_color)
     background[edges > 0] = line_color
     return background
@@ -259,8 +259,6 @@ def main():
 
         try:
             process_frames(cap_process, output_process, width, height, background_color, line_color, logger)
-            print(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
-            logger.log(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
         finally:
             cap_process.terminate()
             output_process.stdin.close()
