@@ -181,7 +181,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-hls_time', '5',
+        '-hls_time', '6',
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
@@ -199,34 +199,31 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
             logger.warning("Lost connection to stream, retrying...")
             break
         
+        # Convert raw frame to numpy array
         frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-
+        
         # Blur the frame to get smoother edges
-        blurred_frame = cv2.GaussianBlur(frame, (5, 5), 0)  # Reduce blur intensity
-
+        blurred_frame = cv2.GaussianBlur(frame, (11, 11), 0)
+        
         # Convert frame to grayscale
         gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
+        
+        # Apply Canny edge detection
+        edges = cv2.Canny(gray, 300, 400, apertureSize=5)
+        
+        # Smooth edges again
+        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
+        smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
-        # Apply Canny edge detection with adjusted thresholds
-        edges = cv2.Canny(gray, 50, 100)  # Lower the thresholds for more sensitivity
-
-        # Detect lines using Hough Line Transform with adjusted parameters
-        lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=50, minLineLength=50, maxLineGap=20)  # Lower threshold and minLineLength, increase maxLineGap
-
-        # Create a background
+        # Create a background and apply edge color
         background = np.full_like(frame, background_color)
-
-        # Draw the detected lines on the background
-        if lines is not None:
-            lines = lines.reshape(-1, 4)  # Flatten the array for faster processing
-            for x1, y1, x2, y2 in lines:
-                cv2.line(background, (x1, y1), (x2, y2), line_color, 2)
+        background[smoothed_edges > 0] = line_color
 
         # Append to frame buffer
         frame_buffer.append(background)
         
         # Process frames in batches
-        if len(frame_buffer) == 150:  # 1 second of frames at 30 fps
+        if len(frame_buffer) == 1080:  # 6 seconsd of frames at 30 fps
             for f in frame_buffer:
                 output_process.stdin.write(f.tobytes())
             frame_buffer.clear()
