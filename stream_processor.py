@@ -152,6 +152,7 @@ def format_headers(headers):
     return header_str
 
 def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
+    # Create FFmpeg command with custom headers
     ffmpeg_command = [
         'ffmpeg',
         '-headers', headers,
@@ -159,13 +160,10 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
         '-f', 'rawvideo',
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
-        '-threads', '0',  # Use all available CPU threads
+        '-c:v', 'rawvideo',
         '-'
     ]
-    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
+    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**9)
 
 def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
@@ -177,39 +175,24 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
-        '-c:v', 'libx264',  # Use CPU encoding
-        '-preset', 'p1',  # Fastest preset for NVENC
-        '-tune', 'ull',  # Ultra-low latency tuning
-        '-rc', 'cbr',  # Constant bitrate for smoother streaming
-        '-b:v', '3M',  # Increased bitrate for better quality
-        '-maxrate', '3M',
-        '-bufsize', '6M',
-        '-g', str(fps),
-        '-pix_fmt', 'yuv420p',
+        '-c:v', 'libx264',
+        '-preset', 'slow',  # Slower preset for better compression
+        '-tune', 'film',  # Adjust for content type, change if needed
+        '-crf', '23',  # Constant Rate Factor for variable bitrate control
+        '-maxrate', '3M',  # Maximum bitrate
+        '-bufsize', '6M',  # Buffer size
         '-f', 'hls',
-        '-hls_time', '1',  # 1-second segments for lower latency
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
-        '-hls_segment_type', 'mpegts',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
     ]
-    return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-async def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
+def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
     frame_buffer = []
-    text_space = 50  # Space for text
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1
-    line_type = 2
-
-    target_fps = 30
-    frame_duration = 1 / target_fps
 
     while True:
-        start_time = time.time()
-        
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
         if not raw_frame:
@@ -236,50 +219,24 @@ async def process_frames(ffmpeg_process, output_process, width, height, buffer, 
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
 
-        # Add border for text
-        frame_with_border = cv2.copyMakeBorder(background, 0, text_space, 0, 0, cv2.BORDER_CONSTANT, value=background_color)
-        
-        # Current time
-        current_time = datetime.datetime.now().strftime("%I:%M %p")
-        (text_width, text_height), _ = cv2.getTextSize(current_time, font, font_scale, line_type)
-
-        # Draw "Abbey Road" text centered horizontally above the frame
-        abbey_road_text = "Abbey Road"
-        (abbey_road_text_width, abbey_road_text_height), _ = cv2.getTextSize(abbey_road_text, font, font_scale, line_type)
-        cv2.putText(frame_with_border, abbey_road_text, ((frame_with_border.shape[1] - abbey_road_text_width) // 2, text_space // 2 + abbey_road_text_height // 2), font, font_scale, line_color, line_type)
-
-        # Draw current time centered horizontally below the frame
-        cv2.putText(frame_with_border, current_time, ((frame_with_border.shape[1] - text_width) // 2, frame_with_border.shape[0] - text_space // 2 + text_height // 2), font, font_scale, line_color, line_type)
-
         # Append to frame buffer
-        frame_buffer.append(frame_with_border)
-
-        # Calculate the time taken for processing
-        processing_time = time.time() - start_time
-        
-        # Ensure consistent frame rate
-        await asyncio.sleep(max(0, frame_duration - processing_time))
-        
-        # Process frames in batches
-        if len(frame_buffer) == 180:  # Adjust based on desired batch size
-            for f in frame_buffer:
-                output_process.stdin.write(f.tobytes())
-            frame_buffer.clear()
+        frame_buffer.append(background)
 
     for frame in frame_buffer:
         output_process.stdin.write(frame.tobytes())
-    frame_buffer.clear()
+        
+        
 
 def main():
     # Add a startup delay to ensure nginx is ready
-    time.sleep(30)  # Delay for 30 seconds
+    time.sleep(30)  # Delay for 60 seconds
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
     buffer = []
 
-    width = 960
+    width = 1080
     height = 720
     fps = 30
 
@@ -306,21 +263,13 @@ def main():
     while True:
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
-        
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
-        
-        start_time = time.time()
 
         try:
-            while True:
-                asyncio.run(process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger))
-
-                # Check if the URL needs to be refreshed (6 seconds)
-                if time.time() - start_time > 6:
-                    break
-
-                
+            process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
+            print(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
+            logger.log(f'\n\nPROCESSED FRAMES: {input_stream}\nTIME: {int(time.time())}\n\n')
         finally:
             cap_process.terminate()
             output_process.stdin.close()
