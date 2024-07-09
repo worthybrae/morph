@@ -177,8 +177,11 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
+        '-preset', 'slow',  # Slower preset for better compression
+        '-tune', 'film',  # Adjust for content type, change if needed
+        '-crf', '23',  # Constant Rate Factor for variable bitrate control
+        '-maxrate', '1000k',  # Maximum bitrate
+        '-bufsize', '2000k',  # Buffer size
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
         '-hls_list_size', '10',
