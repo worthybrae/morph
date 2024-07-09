@@ -226,11 +226,19 @@ def process_frames(ffmpeg_process, output_process, width, height, background_col
                 done, futures = wait(futures, return_when=FIRST_COMPLETED)
                 for completed_future in done:
                     processed_frame = completed_future.result()
-                    output_process.stdin.write(processed_frame.tobytes())
+                    try:
+                        output_process.stdin.write(processed_frame.tobytes())
+                    except BrokenPipeError:
+                        logger.error("Output FFmpeg process terminated unexpectedly.")
+                        return
         
         for future in as_completed(futures):
             processed_frame = future.result()
-            output_process.stdin.write(processed_frame.tobytes())
+            try:
+                output_process.stdin.write(processed_frame.tobytes())
+            except BrokenPipeError:
+                logger.error("Output FFmpeg process terminated unexpectedly.")
+                return
 
 def main():
     time.sleep(30)  # Startup delay
