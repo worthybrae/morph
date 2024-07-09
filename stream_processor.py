@@ -10,6 +10,7 @@ from astral.sun import sun
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import wait, FIRST_COMPLETED
+import os
 
 
 def get_dynamic_url():
@@ -153,7 +154,6 @@ def format_headers(headers):
     return header_str
 
 def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
-    # Create FFmpeg command with custom headers
     ffmpeg_command = [
         'ffmpeg',
         '-headers', headers,
@@ -162,10 +162,11 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
         '-an',
-        '-c:v', 'rawvideo',
+        '-c:v', 'h264_cuvid',  # Use NVIDIA GPU decoding
+        '-threads', '0',  # Use all available CPU threads
         '-'
     ]
-    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**9)
+    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
 
 def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
@@ -177,23 +178,24 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
-        '-crf', '23',
-        '-maxrate', '2000k',
-        '-bufsize', '8000k',
-        '-g', str(fps * 2),  # GOP size: 2 seconds
+        '-c:v', 'h264_nvenc',  # Use NVIDIA GPU encoding
+        '-preset', 'p1',  # Fastest preset for NVENC
+        '-tune', 'ull',  # Ultra-low latency tuning
+        '-rc', 'cbr',  # Constant bitrate for smoother streaming
+        '-b:v', '3M',  # Increased bitrate for better quality
+        '-maxrate', '3M',
+        '-bufsize', '6M',
+        '-g', str(fps),
         '-keyint_min', str(fps),
         '-sc_threshold', '0',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-hls_time', '2',  # 2-second segments
-        '-hls_list_size', '10',
-        '-hls_flags', 'delete_segments+append_list',
+        '-hls_time', '1',  # 1-second segments for lower latency
+        '-hls_list_size', '5',
+        '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_type', 'mpegts',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '-force_key_frames', f'expr:gte(t,n_forced*{2})',
+        '-force_key_frames', 'expr:gte(t,n_forced*1)',
         '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
@@ -201,46 +203,41 @@ def initialize_output_ffmpeg_process(width, height, fps):
 def process_frame(frame, background_color, line_color):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 800, 825, apertureSize=5)
-    background = np.full_like(frame, background_color)
+    background = np.full_like(frame, background_color, dtype=np.uint8)
     background[edges > 0] = line_color
     return background
 
 def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
-    frame_size = (height, width, 3)
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    frame_size = width * height * 3
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
         futures = []
         while True:
-            raw_frame = ffmpeg_process.stdout.read(width * height * 3)
+            raw_frame = ffmpeg_process.stdout.read(frame_size)
             if not raw_frame:
                 logger.warning("Lost connection to stream, retrying...")
                 break
             
-            frame = np.frombuffer(raw_frame, np.uint8).reshape(frame_size)
+            frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
             future = executor.submit(process_frame, frame, background_color, line_color)
             futures.append(future)
             
-            if len(futures) == 30:  # Limit the number of queued frames to prevent memory overflow
+            while len(futures) >= 2 * os.cpu_count():
                 done, futures = wait(futures, return_when=FIRST_COMPLETED)
                 for completed_future in done:
                     processed_frame = completed_future.result()
                     output_process.stdin.write(processed_frame.tobytes())
         
-        # Ensure all frames are processed and written out
         for future in as_completed(futures):
             processed_frame = future.result()
             output_process.stdin.write(processed_frame.tobytes())
-        
 
 def main():
-    # Add a startup delay to ensure nginx is ready
-    time.sleep(30)  # Delay for 60 seconds
+    time.sleep(30)  # Startup delay
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    width = 1080
-    height = 720
-    fps = 30
+    width, height, fps = 1080, 720, 30
 
     headers = {
         'Accept': '*/*',
@@ -259,22 +256,23 @@ def main():
 
     formatted_headers = format_headers(headers)
 
-    # Initialize output FFmpeg process once
     output_process = initialize_output_ffmpeg_process(width, height, fps)
 
     while True:
         input_stream = get_dynamic_url()
         background_color, line_color = get_colors()
-        # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
 
         try:
             process_frames(cap_process, output_process, width, height, background_color, line_color, logger)
+        except Exception as e:
+            logger.error(f"Error processing frames: {e}")
         finally:
             cap_process.terminate()
-            output_process.stdin.close()
-            output_process.wait()
+            time.sleep(5)  # Wait before reconnecting
+
+    output_process.stdin.close()
+    output_process.wait()
 
 if __name__ == "__main__":
     main()
-
