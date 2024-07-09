@@ -180,6 +180,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
+        '-g', str(fps*5),
         '-f', 'hls',
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
@@ -190,14 +191,6 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
     frame_buffer = []
-    start_time = time.time()
-    frame_count = 0
-    target_fps = 30
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1
-    line_type = 2
-    text_space = 50  # Space for text
     
     while True:
         # Read raw video frame from FFmpeg process
@@ -226,12 +219,11 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
 
-
         # Append to frame buffer
         frame_buffer.append(background)
         
         # Process frames in batches
-        if len(frame_buffer) == 120:  # 1 second of frames at 30 fps
+        if len(frame_buffer) == 150:  # 1 second of frames at 30 fps
             for frame in frame_buffer:
                 output_process.stdin.write(frame.tobytes())
             frame_buffer.clear()
