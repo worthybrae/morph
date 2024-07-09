@@ -8,9 +8,7 @@ import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from concurrent.futures import wait, FIRST_COMPLETED
-import os
+import asyncio
 
 
 def get_dynamic_url():
@@ -315,9 +313,15 @@ def main():
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
         
+        start_time = time.time()
+
         try:
             while True:
-                process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
+                asyncio.run(process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger))
+
+                # Check if the URL needs to be refreshed (6 seconds)
+                if time.time() - start_time > 6:
+                    break
 
                 
         finally:
