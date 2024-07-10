@@ -181,6 +181,8 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
+        '-bufsize', '30M',
+        '-maxrate', '15M',  # Maximum bitrate
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
