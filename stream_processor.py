@@ -160,7 +160,6 @@ def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
         '-r', str(fps),
-        '-an',
         '-c:v', 'rawvideo',
         '-'
     ]
@@ -191,7 +190,6 @@ def initialize_output_ffmpeg_process(width, height, fps):
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
 def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
-    frame_buffer = []
     
     while True:
         # Read raw video frame from FFmpeg process
@@ -220,18 +218,8 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
 
-        # Append to frame buffer
-        frame_buffer.append(background)
-        
-        # Process frames in batches
-        if len(frame_buffer) == 180: 
-            for f in frame_buffer:
-                output_process.stdin.write(f.tobytes())
-            frame_buffer.clear()
+        output_process.stdin.write(background.tobytes())
 
-    for frame in frame_buffer:
-        output_process.stdin.write(frame.tobytes())
-    frame_buffer.clear()
         
         
 
@@ -265,28 +253,26 @@ def main():
 
     formatted_headers = format_headers(headers)
 
+    old_stream = ''
+
+    output_process = initialize_output_ffmpeg_process(width, height, fps)
+
     while True:
         input_stream = get_dynamic_url()
-        background_color, line_color = get_colors()
-        # Initialize FFmpeg process to capture video with headers
-        cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
-        
-        # Initialize output FFmpeg process once
-        output_process = initialize_output_ffmpeg_process(width, height, fps)
 
-        start_time = time.time()
+        if old_stream != input_stream:
+            background_color, line_color = get_colors()
+            # Initialize FFmpeg process to capture video with headers
+            cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
 
-        try:
-            while True:
+            try:
                 process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
-
-                # Check if the URL needs to be refreshed (6 seconds)
-                if time.time() - start_time > 6:
-                    break
-        finally:
-            cap_process.terminate()
-            output_process.stdin.close()
-            output_process.wait()
+            finally:
+                cap_process.terminate()
+                output_process.stdin.close()
+                output_process.wait()
+        time.sleep(1)
+           
 
 if __name__ == "__main__":
     main()
