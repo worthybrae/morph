@@ -9,6 +9,7 @@ from astral import LocationInfo
 from astral.sun import sun
 import logging
 import asyncio
+from multiprocessing import Pool, cpu_count
 
 
 def get_dynamic_url():
@@ -177,7 +178,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',
+        '-preset', 'slow',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
@@ -190,43 +191,70 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
+def process_frame(args):
+    index, frame, background_color, line_color = args
+
+    # Blur the frame to get smoother edges
+    blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
+
+    # Convert frame to grayscale
+    gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
+
+    # Apply Canny edge detection
+    edges = cv2.Canny(gray, 300, 400, apertureSize=5)
+
+    # Smooth edges again
+    kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
+    smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+    # Create a background and apply edge color
+    background = np.full_like(frame, background_color)
+    background[smoothed_edges > 0] = line_color
+
+    return index, background
+
 async def process_frames(ffmpeg_process, output_process, width, height, logger):
+    pool = Pool(cpu_count())  # Initialize multiprocessing pool
+
     while True:
         frames = []
         frame_counter = 0
-        for _ in range(180):
+        for i in range(180):
             raw_frame = ffmpeg_process.stdout.read(width * height * 3)
             if not raw_frame:
                 logger.warning("Lost connection to stream, retrying...")
+                background_color, line_color = get_colors()
+                # Prepare arguments for multiprocessing
+                frame_args = [(index, f, background_color, line_color) for index, f in frames]
+
+                # Process frames in parallel using multiprocessing
+                results = pool.map(process_frame, frame_args)
+
+                # Sort results by original frame order
+                results.sort(key=lambda x: x[0])
+
+                for _, background in results:
+                    output_process.stdin.write(background.tobytes())
+                pool.close()
+                pool.join()
                 return
             # Convert raw frame to numpy array
             frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
             frame_counter += 1
-            frames.append(frame)
-        
-        for f in frames:
-            # Blur the frame to get smoother edges
-            blurred_frame = cv2.GaussianBlur(f, (15, 15), 0)
-            
-            # Convert frame to grayscale
-            gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
-            
-            # Apply Canny edge detection
-            edges = cv2.Canny(gray, 300, 400, apertureSize=5)
-            
-            # Smooth edges again
-            kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
-            smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+            frames.append((i, frame))
 
-            background_color, line_color = get_colors()
+        background_color, line_color = get_colors()
+        # Prepare arguments for multiprocessing
+        frame_args = [(index, f, background_color, line_color) for index, f in frames]
 
-            # Create a background and apply edge color
-            background = np.full_like(blurred_frame, background_color)
-            background[smoothed_edges > 0] = line_color
+        # Process frames in parallel using multiprocessing
+        results = pool.map(process_frame, frame_args)
 
+        # Sort results by original frame order
+        results.sort(key=lambda x: x[0])
+
+        for _, background in results:
             output_process.stdin.write(background.tobytes())
-
-
         
 def main():
     # Add a startup delay to ensure nginx is ready
