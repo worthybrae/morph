@@ -190,9 +190,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-async def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger, current_url):
-    frame_count = 0
-    frames = []
+async def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
 
     while True:
         start_time = time.time()
@@ -223,21 +221,11 @@ async def process_frames(ffmpeg_process, output_process, width, height, backgrou
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
 
-        frames.append(background)
-        frame_count += 1
-
-        if frame_count == 180:
-            for f in frames:
-                # Write processed frame to output FFmpeg process
-                output_process.stdin.write(f.tobytes())
-
+        output_process.stdin.write(background.tobytes())
 
         # Ensure consistent frame rate
         elapsed_time = time.time() - start_time
         await asyncio.sleep(max(0, 1/30 - elapsed_time))
-    for f in frames:
-        # Write processed frame to output FFmpeg process
-        output_process.stdin.write(f.tobytes())
 
         
 def main():
@@ -277,7 +265,7 @@ def main():
         cap_process = initialize_ffmpeg_process(current_url, formatted_headers, width, height, fps)
 
         try:
-            asyncio.run(process_frames(cap_process, output_process, width, height, background_color, line_color, logger, current_url))
+            asyncio.run(process_frames(cap_process, output_process, width, height, background_color, line_color, logger))
         finally:
             cap_process.terminate()
             output_process.stdin.close()
