@@ -8,6 +8,7 @@ import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
 import logging
+import asyncio
 
 
 def get_dynamic_url():
@@ -189,9 +190,13 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frames(ffmpeg_process, output_process, width, height, buffer, background_color, line_color, logger):
-    
+async def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger, current_url):
+    frame_count = 0
+    frames = []
+
     while True:
+        start_time = time.time()
+        
         # Read raw video frame from FFmpeg process
         raw_frame = ffmpeg_process.stdout.read(width * height * 3)
         if not raw_frame:
@@ -218,19 +223,29 @@ def process_frames(ffmpeg_process, output_process, width, height, buffer, backgr
         background = np.full_like(frame, background_color)
         background[smoothed_edges > 0] = line_color
 
-        output_process.stdin.write(background.tobytes())
+        frames.append(background)
+        frame_count += 1
+
+        if frame_count == 180:
+            for f in frames:
+                # Write processed frame to output FFmpeg process
+                output_process.stdin.write(f.tobytes())
+
+
+        # Ensure consistent frame rate
+        elapsed_time = time.time() - start_time
+        await asyncio.sleep(max(0, 1/30 - elapsed_time))
+    for f in frames:
+        # Write processed frame to output FFmpeg process
+        output_process.stdin.write(f.tobytes())
 
         
-        
-
 def main():
     # Add a startup delay to ensure nginx is ready
-    time.sleep(30)  # Delay for 60 seconds
+    time.sleep(30)  # Delay for 30 seconds
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-
-    buffer = []
 
     width = 1080
     height = 720
@@ -253,24 +268,21 @@ def main():
 
     formatted_headers = format_headers(headers)
 
-    old_stream = ''
-
     output_process = initialize_output_ffmpeg_process(width, height, fps)
+    current_url = get_dynamic_url()
+    background_color, line_color = get_colors()
 
     while True:
-        input_stream = get_dynamic_url()
+        # Initialize FFmpeg process to capture video with headers
+        cap_process = initialize_ffmpeg_process(current_url, formatted_headers, width, height, fps)
 
-        if old_stream != input_stream:
-            background_color, line_color = get_colors()
-            # Initialize FFmpeg process to capture video with headers
-            cap_process = initialize_ffmpeg_process(input_stream, formatted_headers, width, height, fps)
-
-            try:
-                process_frames(cap_process, output_process, width, height, buffer, background_color, line_color, logger)
-            finally:
-                cap_process.terminate()
-                output_process.stdin.close()
-                output_process.wait()
+        try:
+            asyncio.run(process_frames(cap_process, output_process, width, height, background_color, line_color, logger, current_url))
+        finally:
+            cap_process.terminate()
+            output_process.stdin.close()
+            output_process.wait()
+        
         time.sleep(1)
            
 
