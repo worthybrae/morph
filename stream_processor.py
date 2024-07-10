@@ -53,9 +53,6 @@ def configure_logger():
 
     return logger
 
-def get_dynamic_url():
-    return f'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w{int(time.time())}.m3u8'
-
 def find_midpoint(start_time, end_time):
     return start_time + (end_time - start_time) / 2
 
@@ -193,12 +190,12 @@ def format_headers(headers):
         header_str += f"{key}: {value}\r\n"
     return header_str
 
-def initialize_ffmpeg_process(input_stream, headers, width, height, fps):
+def initialize_ffmpeg_process(headers, width, height, fps):
     # Create FFmpeg command with custom headers
     ffmpeg_command = [
         'ffmpeg',
         '-headers', headers,
-        '-i', input_stream,
+        '-i', 'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w.m3u8',
         '-f', 'rawvideo',
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
@@ -222,8 +219,10 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-preset', 'fast',
         '-tune', 'zerolatency',
         '-f', 'hls',
+        '-b:v', '10M',
         '-bufsize', '100M',
         '-maxrate', '50M',  # Maximum bitrate
+        '-hls_time', '6',
         '-hls_list_size', '10',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
@@ -256,11 +255,11 @@ def process_frame(args):
 async def process_frames(ffmpeg_process, output_process, width, height, logger):
     pool = Pool(cpu_count())
     frame_buffer = CircularBuffer(maxsize=900)
-    background_color, line_color = get_colors()
 
     while True:
         frames = []
-        for i in range(60):
+        background_color, line_color = get_colors()
+        for i in range(150):
             raw_frame = ffmpeg_process.stdout.read(width * height * 3)
             if not raw_frame:
                 logger.warning("Lost connection to stream, retrying...")
@@ -320,15 +319,14 @@ def main():
 
     output_process = initialize_output_ffmpeg_process(width, height, fps)
 
-    while True:
-        current_url = get_dynamic_url()
-        # Initialize FFmpeg process to capture video with headers
-        cap_process = initialize_ffmpeg_process(current_url, formatted_headers, width, height, fps)
+    cap_process = initialize_ffmpeg_process(formatted_headers, width, height, fps)
 
+    while True:
+    
         try:
             asyncio.run(process_frames(cap_process, output_process, width, height, logger))
-        finally:
-            cap_process.terminate()
+        except Exception as e:
+            print(e)
            
 
 if __name__ == "__main__":
