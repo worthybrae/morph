@@ -195,13 +195,14 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'slow',
+        '-preset', 'fast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
         '-f', 'hls',
-        '-bufsize', '30M',
-        '-maxrate', '15M',  # Maximum bitrate
+        '-bufsize', '100M',
+        '-maxrate', '50M',  # Maximum bitrate
         '-hls_list_size', '10',
+        '-hls_time': '6',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
@@ -231,39 +232,36 @@ def process_frame(args):
     return index, background
 
 async def process_frames(ffmpeg_process, output_process, width, height, logger):
-    pool = Pool(cpu_count())  # Initialize multiprocessing pool
-    frame_buffer = CircularBuffer(maxsize=360)  # Buffer for 2 segments (180 frames each)
+    pool = Pool(cpu_count())
+    frame_buffer = CircularBuffer(maxsize=900)
+    background_color, line_color = get_colors()
 
     while True:
         frames = []
-        frame_counter = 0
         for i in range(180):
             raw_frame = ffmpeg_process.stdout.read(width * height * 3)
             if not raw_frame:
                 logger.warning("Lost connection to stream, retrying...")
-                # Process and write remaining frames in the buffer
-                process_and_write_buffer(frame_buffer, pool, output_process, background_color, line_color)
+                process_and_write_buffer(frame_buffer, output_process)
                 pool.close()
                 pool.join()
                 return
-            # Convert raw frame to numpy array
             frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-            frame_counter += 1
             frames.append((i, frame))
 
-        background_color, line_color = get_colors()
-        # Process frames
         frame_args = [(index, f, background_color, line_color) for index, f in frames]
         results = pool.map(process_frame, frame_args)
         results.sort(key=lambda x: x[0])
 
-        # Add processed frames to the buffer
         for _, background in results:
             frame_buffer.append(background)
 
-        # If the buffer is full, process and write a segment
-        if len(frame_buffer) >= 360:
-            process_and_write_buffer(frame_buffer, pool, output_process, background_color, line_color)
+        if len(frame_buffer) >= 900:
+            process_and_write_buffer(frame_buffer, output_process)
+
+        # Periodically update colors
+        if len(frame_buffer) % 900 == 0:  # Update colors every 3 segments
+            background_color, line_color = get_colors()
 
 def process_and_write_buffer(frame_buffer, pool, output_process, background_color, line_color):
     buffered_frames = frame_buffer.get_all()
