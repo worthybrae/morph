@@ -197,12 +197,11 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-c:v', 'libx264',
         '-preset', 'fast',
         '-tune', 'zerolatency',
-        '-pix_fmt', 'yuv420p',
         '-f', 'hls',
         '-bufsize', '100M',
         '-maxrate', '50M',  # Maximum bitrate
         '-hls_list_size', '10',
-        '-hls_time', '6',
+        '-hls_time', '2',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
@@ -238,7 +237,7 @@ async def process_frames(ffmpeg_process, output_process, width, height, logger):
 
     while True:
         frames = []
-        for i in range(180):
+        for i in range(60):
             raw_frame = ffmpeg_process.stdout.read(width * height * 3)
             if not raw_frame:
                 logger.warning("Lost connection to stream, retrying...")
