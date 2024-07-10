@@ -192,41 +192,40 @@ def initialize_output_ffmpeg_process(width, height, fps):
 
 async def process_frames(ffmpeg_process, output_process, width, height, logger):
     while True:
-        start_time = time.time()
+        frames = []
+        frame_counter = 0
+        for _ in range(180):
+            raw_frame = ffmpeg_process.stdout.read(width * height * 3)
+            if not raw_frame:
+                logger.warning("Lost connection to stream, retrying...")
+                return
+            # Convert raw frame to numpy array
+            frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
+            frame_counter += 1
+            frames.append(frame)
         
-        # Read raw video frame from FFmpeg process
-        raw_frame = ffmpeg_process.stdout.read(width * height * 3)
-        if not raw_frame:
-            logger.warning("Lost connection to stream, retrying...")
-            break
-        
-        # Convert raw frame to numpy array
-        frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-        
-        # Blur the frame to get smoother edges
-        blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
-        
-        # Convert frame to grayscale
-        gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
-        
-        # Apply Canny edge detection
-        edges = cv2.Canny(gray, 300, 400, apertureSize=5)
-        
-        # Smooth edges again
-        kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
-        smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+        for f in frames:
+            # Blur the frame to get smoother edges
+            blurred_frame = cv2.GaussianBlur(f, (15, 15), 0)
+            
+            # Convert frame to grayscale
+            gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
+            
+            # Apply Canny edge detection
+            edges = cv2.Canny(gray, 300, 400, apertureSize=5)
+            
+            # Smooth edges again
+            kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
+            smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
-        background_color, line_color = get_colors()
+            background_color, line_color = get_colors()
 
-        # Create a background and apply edge color
-        background = np.full_like(frame, background_color)
-        background[smoothed_edges > 0] = line_color
+            # Create a background and apply edge color
+            background = np.full_like(blurred_frame, background_color)
+            background[smoothed_edges > 0] = line_color
 
-        output_process.stdin.write(background.tobytes())
+            output_process.stdin.write(background.tobytes())
 
-        # Ensure consistent frame rate
-        elapsed_time = time.time() - start_time
-        await asyncio.sleep(max(0, 1/30 - elapsed_time))
 
         
 def main():
@@ -270,8 +269,6 @@ def main():
             cap_process.terminate()
             output_process.stdin.close()
             output_process.wait()
-        
-        time.sleep(1)
            
 
 if __name__ == "__main__":
