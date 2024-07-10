@@ -163,20 +163,17 @@ def initialize_ffmpeg_process(headers, width, height, fps):
 def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
         'ffmpeg',
-        '-y',
         '-f', 'rawvideo',
-        '-vcodec', 'rawvideo',
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
         '-preset', 'veryfast',
-        '-tune', 'zerolatency',
         '-f', 'hls',
         '-hls_time', '3',
-        '-hls_list_size', '5',
-        '-hls_flags', 'delete_segments+append_list+omit_endlist',
+        '-hls_list_size', '10',
+        '-hls_flags', 'delete_segments',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
     ]
