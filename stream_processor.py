@@ -7,51 +7,7 @@ import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
-import logging
-import asyncio
-from multiprocessing import Pool, cpu_count
-from collections import deque
-import sys
 
-
-class CircularBuffer:
-    def __init__(self, maxsize):
-        self.buffer = deque(maxlen=maxsize)
-
-    def append(self, item):
-        self.buffer.append(item)
-
-    def get_all(self):
-        return list(self.buffer)
-
-    def clear(self):
-        self.buffer.clear()
-
-    def __len__(self):
-        return len(self.buffer)
-
-def configure_logger():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-
-    # Create console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-
-    # Create file handler
-    file_handler = logging.FileHandler('app.log')
-    file_handler.setLevel(logging.INFO)
-
-    # Create formatter and add it to the handlers
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-
-    # Add handlers to the logger
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    return logger
 
 def find_midpoint(start_time, end_time):
     return start_time + (end_time - start_time) / 2
@@ -200,7 +156,6 @@ def initialize_ffmpeg_process(headers, width, height, fps):
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
         '-r', str(fps),
-        '-c:v', 'rawvideo',
         '-'
     ]
     return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
@@ -216,23 +171,19 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'fast',
+        '-preset', 'veryfast',
         '-tune', 'zerolatency',
         '-f', 'hls',
-        '-b:v', '10M',
-        '-bufsize', '100M',
-        '-maxrate', '50M',  # Maximum bitrate
-        '-hls_time', '6',
-        '-hls_list_size', '10',
+        '-hls_time', '3',
+        '-hls_list_size', '5',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(args):
-    index, frame, background_color, line_color = args
-
+def process_frame(frame):
+    background_color, line_color = get_colors()
     # Blur the frame to get smoother edges
     blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
 
@@ -250,51 +201,11 @@ def process_frame(args):
     background = np.full_like(frame, background_color)
     background[smoothed_edges > 0] = line_color
 
-    return index, background
-
-async def process_frames(ffmpeg_process, output_process, width, height, logger):
-    pool = Pool(cpu_count())
-    frame_buffer = CircularBuffer(maxsize=900)
-
-    while True:
-        frames = []
-        background_color, line_color = get_colors()
-        for i in range(150):
-            raw_frame = ffmpeg_process.stdout.read(width * height * 3)
-            if not raw_frame:
-                logger.warning("Lost connection to stream, retrying...")
-                process_and_write_buffer(frame_buffer, output_process)
-                pool.close()
-                pool.join()
-                return
-            frame = np.frombuffer(raw_frame, np.uint8).reshape((height, width, 3))
-            frames.append((i, frame))
-
-        frame_args = [(index, f, background_color, line_color) for index, f in frames]
-        results = pool.map(process_frame, frame_args)
-        results.sort(key=lambda x: x[0])
-
-        for _, background in results:
-            frame_buffer.append(background)
-
-        if len(frame_buffer) >= 900:
-            process_and_write_buffer(frame_buffer, output_process)
-
-        # Periodically update colors
-        if len(frame_buffer) % 900 == 0:  # Update colors every 3 segments
-            background_color, line_color = get_colors()
-
-def process_and_write_buffer(frame_buffer, output_process):
-    buffered_frames = frame_buffer.get_all()
-    for background in buffered_frames:
-        output_process.stdin.write(background.tobytes())
-    frame_buffer.clear()
+    return background
         
 def main():
     # Add a startup delay to ensure nginx is ready
     time.sleep(10)  # Delay for 30 seconds
-
-    logger = configure_logger()
 
     width = 1080
     height = 720
@@ -314,19 +225,20 @@ def main():
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"macOS"'
     }
-
     formatted_headers = format_headers(headers)
 
-    output_process = initialize_output_ffmpeg_process(width, height, fps)
-
-    cap_process = initialize_ffmpeg_process(formatted_headers, width, height, fps)
-
     while True:
-    
-        try:
-            asyncio.run(process_frames(cap_process, output_process, width, height, logger))
-        except Exception as e:
-            print(e)
+        input_process = initialize_ffmpeg_process(formatted_headers, width, height, fps)
+        output_process = initialize_output_ffmpeg_process(width, height, fps)
+        while True:
+            in_bytes = input_process.stdout.read(width * height * 3)
+            if not in_bytes:
+                break
+            
+            # Convert bytes to numpy array
+            frame = np.frombuffer(in_bytes, np.uint8).reshape((height, width, 3))
+            processed_frame = process_frame(frame)
+            output_process.stdin.write(processed_frame.tobytes())
            
 
 if __name__ == "__main__":
