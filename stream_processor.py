@@ -29,6 +29,29 @@ class CircularBuffer:
     def __len__(self):
         return len(self.buffer)
 
+def configure_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    # Create console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+
+    # Create file handler
+    file_handler = logging.FileHandler('app.log')
+    file_handler.setLevel(logging.INFO)
+
+    # Create formatter and add it to the handlers
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+
+    # Add handlers to the logger
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+    return logger
+
 def get_dynamic_url():
     return f'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w{int(time.time())}.m3u8'
 
@@ -269,10 +292,9 @@ def process_and_write_buffer(frame_buffer, output_process):
         
 def main():
     # Add a startup delay to ensure nginx is ready
-    time.sleep(30)  # Delay for 30 seconds
+    time.sleep(10)  # Delay for 30 seconds
 
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    logger = configure_logger()
 
     width = 1080
     height = 720
