@@ -202,7 +202,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-bufsize', '100M',
         '-maxrate', '50M',  # Maximum bitrate
         '-hls_list_size', '10',
-        '-hls_time': '6',
+        '-hls_time', '6',
         '-hls_flags', 'delete_segments+append_list+omit_endlist',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
