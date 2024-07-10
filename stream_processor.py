@@ -169,11 +169,12 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',
-        '-preset', 'veryfast',
+        '-preset', 'fast',
         '-f', 'hls',
+        '-g', str(int(fps * 3)),
         '-hls_time', '3',
         '-hls_list_size', '10',
-        '-hls_flags', 'delete_segments',
+        '-hls_flags', 'delete_segments+split_by_time',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
     ]
