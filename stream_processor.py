@@ -10,7 +10,24 @@ from astral.sun import sun
 import logging
 import asyncio
 from multiprocessing import Pool, cpu_count
+from collections import deque
 
+
+class CircularBuffer:
+    def __init__(self, maxsize):
+        self.buffer = deque(maxlen=maxsize)
+
+    def append(self, item):
+        self.buffer.append(item)
+
+    def get_all(self):
+        return list(self.buffer)
+
+    def clear(self):
+        self.buffer.clear()
+
+    def __len__(self):
+        return len(self.buffer)
 
 def get_dynamic_url():
     return f'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w{int(time.time())}.m3u8'
@@ -215,6 +232,7 @@ def process_frame(args):
 
 async def process_frames(ffmpeg_process, output_process, width, height, logger):
     pool = Pool(cpu_count())  # Initialize multiprocessing pool
+    frame_buffer = CircularBuffer(maxsize=360)  # Buffer for 2 segments (180 frames each)
 
     while True:
         frames = []
@@ -223,18 +241,8 @@ async def process_frames(ffmpeg_process, output_process, width, height, logger):
             raw_frame = ffmpeg_process.stdout.read(width * height * 3)
             if not raw_frame:
                 logger.warning("Lost connection to stream, retrying...")
-                background_color, line_color = get_colors()
-                # Prepare arguments for multiprocessing
-                frame_args = [(index, f, background_color, line_color) for index, f in frames]
-
-                # Process frames in parallel using multiprocessing
-                results = pool.map(process_frame, frame_args)
-
-                # Sort results by original frame order
-                results.sort(key=lambda x: x[0])
-
-                for _, background in results:
-                    output_process.stdin.write(background.tobytes())
+                # Process and write remaining frames in the buffer
+                process_and_write_buffer(frame_buffer, pool, output_process, background_color, line_color)
                 pool.close()
                 pool.join()
                 return
@@ -244,17 +252,24 @@ async def process_frames(ffmpeg_process, output_process, width, height, logger):
             frames.append((i, frame))
 
         background_color, line_color = get_colors()
-        # Prepare arguments for multiprocessing
+        # Process frames
         frame_args = [(index, f, background_color, line_color) for index, f in frames]
-
-        # Process frames in parallel using multiprocessing
         results = pool.map(process_frame, frame_args)
-
-        # Sort results by original frame order
         results.sort(key=lambda x: x[0])
 
+        # Add processed frames to the buffer
         for _, background in results:
-            output_process.stdin.write(background.tobytes())
+            frame_buffer.append(background)
+
+        # If the buffer is full, process and write a segment
+        if len(frame_buffer) >= 360:
+            process_and_write_buffer(frame_buffer, pool, output_process, background_color, line_color)
+
+def process_and_write_buffer(frame_buffer, pool, output_process, background_color, line_color):
+    buffered_frames = frame_buffer.get_all()
+    for background in buffered_frames:
+        output_process.stdin.write(background.tobytes())
+    frame_buffer.clear()
         
 def main():
     # Add a startup delay to ensure nginx is ready
@@ -295,8 +310,6 @@ def main():
             asyncio.run(process_frames(cap_process, output_process, width, height, logger))
         finally:
             cap_process.terminate()
-            output_process.stdin.close()
-            output_process.wait()
            
 
 if __name__ == "__main__":
