@@ -190,8 +190,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-async def process_frames(ffmpeg_process, output_process, width, height, background_color, line_color, logger):
-
+async def process_frames(ffmpeg_process, output_process, width, height, logger):
     while True:
         start_time = time.time()
         
@@ -216,6 +215,8 @@ async def process_frames(ffmpeg_process, output_process, width, height, backgrou
         # Smooth edges again
         kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
         smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+        background_color, line_color = get_colors()
 
         # Create a background and apply edge color
         background = np.full_like(frame, background_color)
@@ -257,15 +258,14 @@ def main():
     formatted_headers = format_headers(headers)
 
     output_process = initialize_output_ffmpeg_process(width, height, fps)
-    current_url = get_dynamic_url()
-    background_color, line_color = get_colors()
 
     while True:
+        current_url = get_dynamic_url()
         # Initialize FFmpeg process to capture video with headers
         cap_process = initialize_ffmpeg_process(current_url, formatted_headers, width, height, fps)
 
         try:
-            asyncio.run(process_frames(cap_process, output_process, width, height, background_color, line_color, logger))
+            asyncio.run(process_frames(cap_process, output_process, width, height, logger))
         finally:
             cap_process.terminate()
             output_process.stdin.close()
