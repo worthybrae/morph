@@ -263,7 +263,7 @@ async def process_frames(ffmpeg_process, output_process, width, height, logger):
         if len(frame_buffer) % 900 == 0:  # Update colors every 3 segments
             background_color, line_color = get_colors()
 
-def process_and_write_buffer(frame_buffer, pool, output_process, background_color, line_color):
+def process_and_write_buffer(frame_buffer, output_process):
     buffered_frames = frame_buffer.get_all()
     for background in buffered_frames:
         output_process.stdin.write(background.tobytes())
