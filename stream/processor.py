@@ -253,7 +253,7 @@ def main():
             results_sorted = sorted(results, key=lambda x: x[0])
             for r in results_sorted:
                 # Write the transformed frame to the output process
-                output_process.stdin.write(r.tobytes())
+                output_process.stdin.write(r[1].tobytes())
 
             
                 
