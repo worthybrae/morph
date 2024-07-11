@@ -1,5 +1,6 @@
 import http.server
 import socketserver
+import ssl
 
 
 class CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -14,6 +15,12 @@ def main():
     Handler = CORSRequestHandler
 
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        httpd.socket = ssl.wrap_socket(
+            httpd.socket,
+            keyfile="/etc/letsencrypt/live/worthyrae.com/privkey.pem",
+            certfile="/etc/letsencrypt/live/worthyrae.com/fullchain.pem",
+            server_side=True
+        )
         print("serving at port", PORT)
         httpd.serve_forever()
 

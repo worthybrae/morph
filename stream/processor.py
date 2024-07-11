@@ -287,6 +287,5 @@ def main():
             input_process.wait()
             output_process.wait()
 
-
 if __name__ == "__main__":
     main()

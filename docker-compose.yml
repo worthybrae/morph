@@ -16,8 +16,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  processor:
-    build: ./processor
+  stream:
+    build: ./stream
     restart: unless-stopped
     volumes:
       - /tmp/hls:/tmp/hls
