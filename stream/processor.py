@@ -10,6 +10,7 @@ from astral.sun import sun
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import multiprocessing
 
 
 def find_midpoint(start_time, end_time):
@@ -181,7 +182,8 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(frame):
+def process_frame(data):
+    order, frame = data
     background_color, line_color = get_colors()
     # Blur the frame to get smoother edges
     blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
@@ -200,7 +202,7 @@ def process_frame(frame):
     background = np.full_like(frame, background_color)
     background[smoothed_edges > 0] = line_color
 
-    return background
+    return order, background
         
 def main():
     # Add a startup delay to ensure nginx is ready
@@ -240,52 +242,21 @@ def main():
 
     # Start running indefinite loop
     while True:
-        try:
-            logger.info("Starting input and output processes...")
-            input_process = initialize_ffmpeg_process(formatted_headers, width, height)
-            output_process = initialize_output_ffmpeg_process(width, height, fps)
-
-            while True:
-                # Read frame size
-                frame_size = width * height * 3  # width * height * 3 (for bgr24)
-                
-                # Read a frame from the input process
-                raw_frame = input_process.stdout.read(frame_size)
-                
-                if len(raw_frame) != frame_size:
-                    logger.warning("Incomplete frame received...")
-                    continue
-                elif not raw_frame:
-                    logger.info("No frame data received...")
-                    continue
-                
-                # Convert the raw frame to a numpy array
-                frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))
-                
-                # Apply transformation
-                transformed_frame = process_frame(frame)
-                
+        logger.info("Starting input and output processes...")
+        input_process = initialize_ffmpeg_process(formatted_headers, width, height)
+        output_process = initialize_output_ffmpeg_process(width, height, fps)
+        frame_size = width * height * 3  # width * height * 3 (for bgr24)
+        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+        while True:
+            frames = [(i, np.frombuffer(input_process.stdout.read(frame_size), dtype=np.uint8).reshape((height, width, 3))) for i in range(180)]
+            results = pool.map(process_frame, frames)
+            results_sorted = sorted(results, key=lambda x: x[0])
+            for r in results_sorted:
                 # Write the transformed frame to the output process
-                output_process.stdin.write(transformed_frame.tobytes())
-            
-        except Exception as e:
-            logger.error(f"Error occurred: {e}. Restarting processes...")
-            input_process.terminate()
-            output_process.terminate()
-            time.sleep(5)  # Wait before restarting
-            continue
+                output_process.stdin.write(r.tobytes())
 
-        finally:
-            logger.info("Cleaning up processes...")
-            # Ensure that the input process's stdout is closed to signal EOF to the output process
-            input_process.stdout.close()
             
-            # Ensure that the output process's stdin is closed
-            output_process.stdin.close()
-            
-            # Wait for the processes to finish
-            input_process.wait()
-            output_process.wait()
+                
 
 if __name__ == "__main__":
     main()
