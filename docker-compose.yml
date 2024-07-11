@@ -24,6 +24,7 @@ services:
     restart: unless-stopped
     volumes:
       - /tmp/hls:/tmp/hls
+      - /logs:/logs
     networks:
       - app-network
     logging:

@@ -207,7 +207,7 @@ def main():
     time.sleep(10)
 
     # Initialize logging setup
-    log_file = os.path.abspath('stream.log')
+    log_file = 'logs/stream.log'
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
@@ -251,8 +251,10 @@ def main():
                 
                 if len(raw_frame) != frame_size:
                     logger.warning("Incomplete frame received...")
+                    continue
                 elif not raw_frame:
                     logger.info("No frame data received...")
+                    continue
                 
                 # Convert the raw frame to a numpy array
                 frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))
