@@ -1,14 +1,11 @@
 version: "3.7"
 
 services:
-  nginx:
-    image: tiangolo/nginx-rtmp
+  server:
+    build: ./server
     ports:
-      - "80:80"
-      - "1935:1935"
-      - "443:443"
+      - "443:8000"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /tmp/hls:/tmp/hls
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
@@ -19,12 +16,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  ffmpeg:
-    build: .
+  processor:
+    build: ./processor
     restart: unless-stopped
     volumes:
       - /tmp/hls:/tmp/hls
-      - /logs:/logs
     networks:
       - app-network
     logging:

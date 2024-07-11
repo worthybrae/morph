@@ -9,7 +9,6 @@ from astral import LocationInfo
 from astral.sun import sun
 import logging
 from logging.handlers import RotatingFileHandler
-import os
 
 
 def find_midpoint(start_time, end_time):
@@ -173,11 +172,11 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-c:v', 'libx264',
         '-f', 'hls',
         '-g', str(int(fps * 3)),
-        '-hls_time', '10',
-        '-hls_list_size', '3',
+        '-hls_time', '3',
+        '-hls_list_size', '10',
         '-hls_flags', 'delete_segments',
-        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '/tmp/hls/stream.m3u8'
+        '-hls_segment_filename', './hls_output/output%03d.ts',
+        './hls_output/output.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 

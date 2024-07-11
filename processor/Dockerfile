@@ -15,15 +15,13 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --upgrade pip
 
 # Copy requirement file into the docker container
-COPY prod_requirements.txt .
+COPY requirements.txt .
 
 # Install any dependencies specified in requirements.txt
-RUN pip install --no-cache-dir -r prod_requirements.txt
-
-RUN mkdir -p /logs && chmod -R 777 /logs
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the Python script into the container
-COPY stream_processor.py /usr/local/bin/stream_processor.py
+COPY processor.py /usr/local/bin/processor.py
 
 # Set the entry point to run the Python script
-ENTRYPOINT ["python3", "/usr/local/bin/stream_processor.py"]
+ENTRYPOINT ["python3", "/usr/local/bin/processor.py"]
