@@ -1,12 +1,13 @@
+import subprocess
 import cv2
 import numpy as np
-import subprocess
-import time
 import datetime
 import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
+import signal
+import sys
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -142,45 +143,74 @@ def get_colors():
     background_color = get_color(progress=progress, start_color=color_lookup[approaching]['background']['start'], end_color=color_lookup[approaching]['background']['end'], exponent=color_lookup[approaching]['exponent'])
     return background_color, line_color
 
-def format_headers(headers):
+headers = {
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Connection': 'keep-alive',
+    'Origin': 'https://www.abbeyroad.com',
+    'Referer': 'https://www.abbeyroad.com/',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'cross-site',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"macOS"'
+}
+
+def format_headers():
     header_str = ""
     for key, value in headers.items():
         header_str += f"{key}: {value}\r\n"
     return header_str
 
-def initialize_ffmpeg_process(headers, width, height):
-    # Create FFmpeg command with custom headers
-    ffmpeg_command = [
-        'ffmpeg',
-        '-headers', headers,
-        '-i', 'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w.m3u8',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'bgr24',
-        '-s', f'{width}x{height}',
-        '-'
-    ]
-    return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
+# Command to read the M3U8 stream
+input_command = [
+    'ffmpeg',
+    '-headers', format_headers(),
+    '-i', 'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w.m3u8',
+    '-f', 'rawvideo',  # Use raw video format
+    '-pix_fmt', 'bgr24',  # Pixel format
+    '-s', '1280x720',  # Frame size (needs to match the input resolution)
+    '-'
+]
 
-def initialize_output_ffmpeg_process(width, height, fps):
-    ffmpeg_command = [
-        'ffmpeg',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'bgr24',
-        '-s', f'{width}x{height}',
-        '-r', str(fps),
-        '-i', '-',
-        '-c:v', 'libx264',
-        '-f', 'hls',
-        '-g', str(int(fps * 3)),
-        '-hls_time', '10',
-        '-hls_list_size', '3',
-        '-hls_flags', 'delete_segments',
-        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '/tmp/hls/stream.m3u8'
-    ]
-    return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
+# Command to output the HLS stream
+output_command = [
+    'ffmpeg',
+    '-f', 'rawvideo',
+    '-pix_fmt', 'bgr24',
+    '-s', '1280x720',  # Resolution of the frames
+    '-r', '30',  # Frame rate
+    '-i', '-',  # Read from stdin
+    '-c:v', 'libx264',
+    '-f', 'hls',
+    '-hls_time', '10',  # Duration of each segment in seconds
+    '-hls_list_size', '3',  # 0 means all segments are kept in the playlist
+    '-hls_segment_filename', './hls_output/output%03d.ts',  # Segment filename pattern
+    '-hls_flags', 'delete_segments',
+    './hls_output/output.m3u8'  # Master playlist filename
+]
 
-def process_frame(frame):
+# Create the input process
+input_process = subprocess.Popen(input_command, stdout=subprocess.PIPE, bufsize=10**8)
+
+# Create the output process
+output_process = subprocess.Popen(output_command, stdin=subprocess.PIPE)
+
+while True:
+    # Read frame size
+    frame_size = 1280 * 720 * 3  # width * height * 3 (for bgr24)
+    
+    # Read a frame from the input process
+    raw_frame = input_process.stdout.read(frame_size)
+    
+    if len(raw_frame) != frame_size:
+        break
+
+    # Convert the raw frame to a numpy array
+    frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((720, 1280, 3))
+
     background_color, line_color = get_colors()
     # Blur the frame to get smoother edges
     blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
@@ -198,91 +228,17 @@ def process_frame(frame):
     # Create a background and apply edge color
     background = np.full_like(frame, background_color)
     background[smoothed_edges > 0] = line_color
+    
+    # Write the transformed frame to the output process
+    output_process.stdin.write(background.tobytes())
 
-    return background
-        
-def main():
-    # Add a startup delay to ensure nginx is ready
-    time.sleep(10)
+# Ensure that the input process's stdout is closed to signal EOF to the output process
+input_process.stdout.close()
 
-    # Initialize logging setup
-    log_file = 'stream.log'
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
-    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+# Ensure that the output process's stdin is closed
+output_process.stdin.close()
 
-    # Specify global variables
-    width = 1080
-    height = 720
-    fps = 30
-    headers = {
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-        'Origin': 'https://www.abbeyroad.com',
-        'Referer': 'https://www.abbeyroad.com/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'cross-site',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"'
-    }
-    formatted_headers = format_headers(headers)
+# Wait for the processes to finish
+input_process.wait()
+output_process.wait()
 
-    # Start running indefinite loop
-    while True:
-        try:
-            logger.info("Starting input and output processes...")
-            input_process = initialize_ffmpeg_process(formatted_headers, width, height)
-            output_process = initialize_output_ffmpeg_process(width, height, fps)
-
-            while True:
-                # Read frame size
-                frame_size = width * height * 3  # width * height * 3 (for bgr24)
-                
-                # Read a frame from the input process
-                raw_frame = input_process.stdout.read(frame_size)
-                
-                if len(raw_frame) != frame_size:
-                    logger.warning("Incomplete frame received. Restarting processes...")
-                    raise Exception("Incomplete frame received")
-                elif not raw_frame:
-                    logger.info("No frame data received. Exiting loop.")
-                    break
-                
-                # Convert the raw frame to a numpy array
-                frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))
-                
-                # Apply transformation
-                transformed_frame = process_frame(frame)
-                
-                # Write the transformed frame to the output process
-                output_process.stdin.write(transformed_frame.tobytes())
-            
-        except Exception as e:
-            logger.error(f"Error occurred: {e}. Restarting processes...")
-            input_process.terminate()
-            output_process.terminate()
-            time.sleep(5)  # Wait before restarting
-            continue
-
-        finally:
-            logger.info("Cleaning up processes...")
-            # Ensure that the input process's stdout is closed to signal EOF to the output process
-            input_process.stdout.close()
-            
-            # Ensure that the output process's stdin is closed
-            output_process.stdin.close()
-            
-            # Wait for the processes to finish
-            input_process.wait()
-            output_process.wait()
-
-
-if __name__ == "__main__":
-    main()
