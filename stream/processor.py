@@ -209,13 +209,13 @@ def main():
     time.sleep(10)
 
     # Initialize logging setup
-    # log_file = 'logs/processor.log'
-    # logger = logging.getLogger(__name__)
-    # logger.setLevel(logging.INFO)
-    # handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
-    # formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-    # handler.setFormatter(formatter)
-    # logger.addHandler(handler)
+    log_file = '/usr/local/bin/logs/processor.log'
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
     # Specify global variables
     width = 1080
