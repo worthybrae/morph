@@ -9,6 +9,7 @@ from astral import LocationInfo
 from astral.sun import sun
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 
 
 def find_midpoint(start_time, end_time):
@@ -206,7 +207,7 @@ def main():
     time.sleep(10)
 
     # Initialize logging setup
-    log_file = 'stream.log'
+    log_file = os.path.abspath('stream.log')
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
@@ -249,11 +250,9 @@ def main():
                 raw_frame = input_process.stdout.read(frame_size)
                 
                 if len(raw_frame) != frame_size:
-                    logger.warning("Incomplete frame received. Restarting processes...")
-                    raise Exception("Incomplete frame received")
+                    logger.warning("Incomplete frame received...")
                 elif not raw_frame:
-                    logger.info("No frame data received. Exiting loop.")
-                    break
+                    logger.info("No frame data received...")
                 
                 # Convert the raw frame to a numpy array
                 frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))
