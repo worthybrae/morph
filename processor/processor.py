@@ -9,6 +9,7 @@ from astral import LocationInfo
 from astral.sun import sun
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 
 
 def find_midpoint(start_time, end_time):
@@ -204,6 +205,9 @@ def process_frame(frame):
 def main():
     # Add a startup delay to ensure nginx is ready
     time.sleep(10)
+
+    # Ensure the logs directory exists
+    os.makedirs('logs', exist_ok=True)
 
     # Initialize logging setup
     log_file = 'logs/stream.log'
