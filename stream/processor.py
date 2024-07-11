@@ -218,8 +218,8 @@ def main():
     logger.addHandler(handler)
 
     # Specify global variables
-    width = 1080
-    height = 720
+    width = 720
+    height = 360
     fps = 30
     headers = {
         'Accept': '*/*',
