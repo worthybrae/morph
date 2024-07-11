@@ -18,7 +18,6 @@ services:
 
   stream:
     build: ./stream
-    restart: unless-stopped
     volumes:
       - /tmp/hls:/tmp/hls
       - /usr/local/bin/logs:/usr/local/bin/logs
