@@ -181,42 +181,47 @@ def initialize_output_ffmpeg_process(width, height, fps):
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
 def process_frame(frame):
+    times = {}
+    total_start = time.time()
+
+    start = time.time()
     background_color, line_color = get_colors()
-    # Blur the frame to get smoother edges
-    blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
+    times['get_colors'] = time.time() - start
 
-    # Convert frame to grayscale
-    gray = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2GRAY)
+    start = time.time()
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    times['cvtColor'] = time.time() - start
 
-    # Apply Canny edge detection
-    edges = cv2.Canny(gray, 300, 400, apertureSize=5)
+    start = time.time()
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=5)
+    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=5)
+    edges = np.sqrt(sobelx**2 + sobely**2)
+    edges = (edges > 50).astype(np.uint8) * 255
+    times['edge_detection'] = time.time() - start
 
-    # Smooth edges again
-    kernel = np.ones((2, 2), np.uint8)  # Adjust kernel size as needed
+    start = time.time()
+    kernel = np.ones((2, 2), np.uint8)
     smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+    times['morphologyEx'] = time.time() - start
 
-    # Create a background and apply edge color
-    background = np.full_like(frame, background_color)
-    background[smoothed_edges > 0] = line_color
+    start = time.time()
+    background = np.where(smoothed_edges[:, :, None] > 0, line_color, background_color)
+    background = background.astype(frame.dtype)
+    times['create_background'] = time.time() - start
 
+    times['total'] = time.time() - total_start
+    for k, v in times.items():
+        print(f"{k:>40}\t{v:.6f}s\t\t({(v/times['total'])*100:,.1f}% of total)\t\t({(v/(1/30))*100:,.1f}% of max time)")
+    print('------------------------------------------------------------------------------------------------------------')
     return background
         
 def main():
     # Add a startup delay to ensure nginx is ready
     time.sleep(10)
 
-    # Initialize logging setup
-    log_file = '/usr/local/bin/logs/processor.log'
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
-    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
     # Specify global variables
-    width = 720
-    height = 360
+    width = 1080
+    height = 720
     fps = 30
     headers = {
         'Accept': '*/*',

@@ -6,7 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
-tmp/
+/logs
+*.m3u8
+*.ts
 
 # Distribution / packaging
 .Python

@@ -20,7 +20,6 @@ services:
     build: ./stream
     volumes:
       - /tmp/hls:/tmp/hls
-      - /logs:/usr/local/bin/logs
     networks:
       - app-network
     logging:

@@ -17,9 +17,6 @@ RUN pip install --upgrade pip
 # Copy requirement file into the docker container
 COPY requirements.txt .
 
-# Create logs directory
-RUN mkdir -p /usr/local/bin/logs
-
 # Install any dependencies specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
