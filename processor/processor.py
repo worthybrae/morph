@@ -210,7 +210,7 @@ def main():
     os.makedirs('logs', exist_ok=True)
 
     # Initialize logging setup
-    log_file = 'logs/stream.log'
+    log_file = 'logs/processor.log'
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
