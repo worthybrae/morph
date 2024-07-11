@@ -208,11 +208,8 @@ def main():
     # Add a startup delay to ensure nginx is ready
     time.sleep(10)
 
-    # Ensure the logs directory exists
-    os.makedirs('logs', exist_ok=True)
-
     # Initialize logging setup
-    log_file = 'logs/processor.log'
+    log_file = '/usr/local/bin/logs/processor.log'
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
