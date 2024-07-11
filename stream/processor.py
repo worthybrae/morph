@@ -9,8 +9,6 @@ from astral import LocationInfo
 from astral.sun import sun
 import logging
 from logging.handlers import RotatingFileHandler
-import os
-import multiprocessing
 
 
 def find_midpoint(start_time, end_time):
@@ -182,8 +180,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(data):
-    order, frame = data
+def process_frame(frame):
     background_color, line_color = get_colors()
     # Blur the frame to get smoother edges
     blurred_frame = cv2.GaussianBlur(frame, (15, 15), 0)
@@ -202,14 +199,14 @@ def process_frame(data):
     background = np.full_like(frame, background_color)
     background[smoothed_edges > 0] = line_color
 
-    return order, background
+    return background
         
 def main():
     # Add a startup delay to ensure nginx is ready
     time.sleep(10)
 
     # Initialize logging setup
-    log_file = '/usr/local/bin/logs/processor.log'
+    log_file = './logs/processor.log'
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     handler = RotatingFileHandler(log_file, maxBytes=10**7, backupCount=3)
@@ -243,14 +240,10 @@ def main():
         input_process = initialize_ffmpeg_process(formatted_headers, width, height)
         output_process = initialize_output_ffmpeg_process(width, height, fps)
         frame_size = width * height * 3  # width * height * 3 (for bgr24)
-        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
         while True:
-            frames = [(i, np.frombuffer(input_process.stdout.read(frame_size), dtype=np.uint8).reshape((height, width, 3))) for i in range(180)]
-            results = pool.map(process_frame, frames)
-            results_sorted = sorted(results, key=lambda x: x[0])
-            for r in results_sorted:
-                # Write the transformed frame to the output process
-                output_process.stdin.write(r[1].tobytes()) 
+            frame = np.frombuffer(input_process.stdout.read(frame_size), dtype=np.uint8).reshape((height, width, 3))
+            processed_frame = process_frame(frame)
+            output_process.stdin.write(processed_frame.tobytes()) 
 
 if __name__ == "__main__":
     main()

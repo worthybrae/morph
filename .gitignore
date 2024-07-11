@@ -5,8 +5,8 @@ __pycache__/
 
 # C extensions
 *.so
-*.ts
-stream.m3u8
+
+tmp/
 
 # Distribution / packaging
 .Python
@@ -27,8 +27,6 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
-/hls_output
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
