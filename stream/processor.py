@@ -180,13 +180,21 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(frame):
+def process_frame(input_process, output_process, width, height):
     times = {}
     total_start = time.time()
 
     start = time.time()
-    background_color, line_color = get_colors()
-    times['get_colors'] = time.time() - start
+    frame = input_process.stdout.read(width * height)
+    times['get_frame'] = time.time() - start
+
+    start = time.time()
+    array = np.frombuffer(frame, dtype=np.uint8).reshape((height, width))
+    times['convert_array'] = time.time() - start
+
+    # start = time.time()
+    # background_color, line_color = get_colors()
+    # times['get_colors'] = time.time() - start
 
     start = time.time()
     gamma = 0.5  # Gamma value less than 1
@@ -194,7 +202,7 @@ def process_frame(frame):
     # Build a lookup table mapping pixel values [0, 255] to their adjusted gamma values
     lookup_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], dtype=np.uint8)
     # Apply the gamma correction using the lookup table
-    emphasized_darker = cv2.LUT(frame, lookup_table)
+    emphasized_darker = cv2.LUT(array, lookup_table)
     times['make_darker'] = time.time() - start
 
     start = time.time()
@@ -211,11 +219,14 @@ def process_frame(frame):
     eroded = cv2.erode(dilated, kernel_erode, iterations=1)
     times['dilation_erosion'] = time.time() - start
 
+    start = time.time()
+    output_process.stdin.write(eroded.tobytes())
+    times['send_output'] = time.time() - start
+
     times['total'] = time.time() - total_start
     for k, v in times.items():
         print(f"{k:>40}\t{v:.6f}s\t\t({(v/times['total'])*100:,.1f}% of total)\t\t({(v/(1/30))*100:,.1f}% of max time)")
     print('------------------------------------------------------------------------------------------------------------')
-    return eroded
         
 def main():
     # Add a startup delay to ensure nginx is ready
@@ -246,12 +257,8 @@ def main():
         try:
             input_process = initialize_ffmpeg_process(formatted_headers, width, height)
             output_process = initialize_output_ffmpeg_process(width, height, fps)
-            frame_size = width * height
             while True:
-                frame = input_process.stdout.read(frame_size)
-                array = np.frombuffer(frame, dtype=np.uint8).reshape((height, width))
-                processed_frame = process_frame(array)
-                output_process.stdin.write(processed_frame.tobytes()) 
+                process_frame(input_process, output_process, width, height) 
         except Exception as e:
             print(f'Pipe Broken: {e}')
 
