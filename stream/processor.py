@@ -7,8 +7,8 @@ import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
-import logging
-from logging.handlers import RotatingFileHandler
+from scipy.interpolate import splprep, splev
+from collections import deque
 
 
 def find_midpoint(start_time, end_time):
@@ -155,8 +155,9 @@ def initialize_ffmpeg_process(headers, width, height):
         '-headers', headers,
         '-i', 'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w.m3u8',
         '-f', 'rawvideo',
-        '-pix_fmt', 'bgr24',
+        '-pix_fmt', 'gray',
         '-s', f'{width}x{height}',
+        '-an',  # Disable audio
         '-'
     ]
     return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
@@ -165,22 +166,139 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
         'ffmpeg',
         '-f', 'rawvideo',
-        '-pix_fmt', 'bgr24',
+        '-pix_fmt', 'gray',
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
+        '-an',  # Disable audio
         '-c:v', 'libx264',
         '-f', 'hls',
         '-g', str(int(fps * 6)),
         '-hls_time', '6',
         '-hls_list_size', '5',
         '-hls_flags', 'delete_segments',
-        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '/tmp/hls/stream.m3u8'
+        '-hls_segment_filename', './tmp/hls/stream%03d.ts',
+        './tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(frame):
+def smooth_contour(contour, k=3):
+    x, y = contour.T
+    # Remove duplicates
+    x, y = np.unique(x), np.unique(y)
+    if len(x) < 4 or len(y) < 4:
+        return contour
+    tck, u = splprep([x, y], k=k, s=0)
+    u_new = np.linspace(u.min(), u.max(), 1000)
+    x_new, y_new = splev(u_new, tck, der=0)
+    return np.array(list(zip(x_new, y_new))).astype(np.int32)
+
+def anisotropic_diffusion(image, iterations, kappa, gamma, step=(1., 1.), option=1):
+    img = image.astype('float32')
+    h, w = img.shape
+
+    for i in range(iterations):
+        deltaN = np.zeros_like(img)
+        deltaS = np.zeros_like(img)
+        deltaE = np.zeros_like(img)
+        deltaW = np.zeros_like(img)
+
+        deltaN[1:, :] = img[:-1, :]
+        deltaS[:-1, :] = img[1:, :]
+        deltaE[:, 1:] = img[:, :-1]
+        deltaW[:, :-1] = img[:, 1:]
+
+        deltaN = deltaN - img
+        deltaS = deltaS - img
+        deltaE = deltaE - img
+        deltaW = deltaW - img
+
+        if option == 1:
+            cN = np.exp(-(deltaN/kappa)**2)
+            cS = np.exp(-(deltaS/kappa)**2)
+            cE = np.exp(-(deltaE/kappa)**2)
+            cW = np.exp(-(deltaW/kappa)**2)
+        elif option == 2:
+            cN = 1. / (1. + (deltaN/kappa)**2)
+            cS = 1. / (1. + (deltaS/kappa)**2)
+            cE = 1. / (1. + (deltaE/kappa)**2)
+            cW = 1. / (1. + (deltaW/kappa)**2)
+
+        img += gamma * (cN * deltaN + cS * deltaS + cE * deltaE + cW * deltaW)
+
+    return img
+
+def blobify(image, kernel_size=15, sigma=5):   
+    # Apply Gaussian blur
+    blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=sigma, sigmaY=sigma)
+    
+    # Threshold to get back to binary image
+    _, result = cv2.threshold(blurred, 90, 255, cv2.THRESH_BINARY)
+    
+    return result
+
+def find_lines(matrix):
+    rows, cols = matrix.shape
+    visited = np.zeros((rows, cols), dtype=bool)
+    directions = [(i, j) for i in range(-2, 3) for j in range(-2, 3)]
+
+    def bfs(start):
+        queue = deque([start])
+        line = []
+        
+        while queue:
+            x, y = queue.popleft()
+            if visited[x, y]:
+                continue
+            
+            visited[x, y] = True
+            line.append((x, y))
+            
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < rows and 0 <= ny < cols and not visited[nx, ny] and matrix[nx, ny] == 255:
+                    queue.append((nx, ny))
+        
+        return line
+
+    lines = []
+    for i in range(rows):
+        for j in range(cols):
+            if matrix[i, j] == 255 and not visited[i, j]:
+                line = bfs((i, j))
+                if line:
+                    lines.append(line)
+    
+    return lines
+
+def filter_and_create_image(matrix, lines, base_color, line_color, threshold=20):
+    # Initialize the base image with the base color
+    print('creating...')
+    image = np.full((matrix.shape[0], matrix.shape[1], 3), base_color, dtype=np.uint8)
+    print('created...')
+    print(image)
+
+    long_line_coords = []
+    
+    for line in lines:
+        min_x = min(coord[0] for coord in line)
+        max_x = max(coord[0] for coord in line)
+        min_y = min(coord[1] for coord in line)
+        max_y = max(coord[1] for coord in line)
+        
+        width = max_y - min_y + 1
+        height = max_x - min_x + 1
+        
+        if width > threshold or height > threshold:
+            long_line_coords.extend(line)
+    
+    # Update the image with the line color for the long lines
+    for x, y in long_line_coords:
+        image[x, y] = line_color
+    
+    return image
+
+def process_frame(frame, height, width):
     times = {}
     total_start = time.time()
 
@@ -189,35 +307,65 @@ def process_frame(frame):
     times['get_colors'] = time.time() - start
 
     start = time.time()
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    times['cvtColor'] = time.time() - start
+    gamma = 0.5  # Gamma value less than 1
+    inv_gamma = 1.0 / gamma
+    # Build a lookup table mapping pixel values [0, 255] to their adjusted gamma values
+    lookup_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], dtype=np.uint8)
+    # Apply the gamma correction using the lookup table
+    emphasized_darker = cv2.LUT(frame, lookup_table)
+    times['make_darker'] = time.time() - start
 
     start = time.time()
-    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=5)
-    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=5)
-    edges = np.sqrt(sobelx**2 + sobely**2)
-    edges = (edges > 50).astype(np.uint8) * 255
+    sin_value = (np.sin(start) + 1) / 2  # Normalize sin_value to be between 0 and 1
+    # Calculate dynamic kernel size based on sin_value
+    kernel_size_dilate = int(3 + 6 * sin_value)  # Vary kernel size between 3 and 9
+    kernel_size_erode = int(4 + 8 * sin_value)  # Vary kernel size between 4 and 12
+    # Create dynamic kernels
+    kernel_dilate = np.random.randint(0, 2, (kernel_size_dilate, kernel_size_dilate)).astype(np.uint8)
+    kernel_erode = np.random.randint(0, 2, (kernel_size_erode, kernel_size_erode)).astype(np.uint8)
+    # Apply dilation with the time-based random kernel
+    dilated = cv2.dilate(emphasized_darker, kernel_dilate, iterations=1)
+    # Apply erosion with another time-based random kernel
+    eroded = cv2.erode(dilated, kernel_erode, iterations=1)
+    times['dilation_erosion'] = time.time() - start
+
+    '''start = time.time()
+    # Edge detection
+    edges = cv2.Canny(gray, 400, 450, apertureSize=5)
     times['edge_detection'] = time.time() - start
 
-    start = time.time()
-    kernel = np.ones((2, 2), np.uint8)
-    smoothed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
-    times['morphologyEx'] = time.time() - start
+    output_filename = 'tmp/hls/edges.png'
+    cv2.imwrite(output_filename, edges)
 
     start = time.time()
-    background = np.where(smoothed_edges[:, :, None] > 0, line_color, background_color)
-    background = background.astype(frame.dtype)
-    times['create_background'] = time.time() - start
+    # Contour detection and smoothing
+    contours, _ = cv2.findContours(edges.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    smoothed_contours = [smooth_contour(contour) for contour in contours]
+    edge_drawing = np.zeros(gray.shape, dtype=np.uint8)
+    cv2.drawContours(edge_drawing, smoothed_contours, -1, (255, 255, 255), 1)
+    times['contour_smoothing'] = time.time() - start
+
+    start = time.time()
+    # Convert edge_drawing to float and normalize to range [0, 1]
+    edges_normalized = edge_drawing.astype(float) / 255.0
+    # Expand dimensions to match the shape of color arrays
+    edges_normalized = edges_normalized[:, :, np.newaxis]
+    times['normEdges'] = time.time() - start
+
+    start = time.time()
+    matrix_3d = np.full((height, width, 3), background_color, dtype=np.uint8)
+    background = (edges * line_color + (1 - edges) * background_color).astype(frame.dtype)
+    times['create_background'] = time.time() - start'''
 
     times['total'] = time.time() - total_start
     for k, v in times.items():
         print(f"{k:>40}\t{v:.6f}s\t\t({(v/times['total'])*100:,.1f}% of total)\t\t({(v/(1/30))*100:,.1f}% of max time)")
     print('------------------------------------------------------------------------------------------------------------')
-    return background
+    return eroded
         
 def main():
     # Add a startup delay to ensure nginx is ready
-    time.sleep(10)
+    # time.sleep(10)
 
     # Specify global variables
     width = 1080
@@ -241,14 +389,16 @@ def main():
 
     # Start running indefinite loop
     while True:
-        # logger.info("Starting input and output processes...")
-        input_process = initialize_ffmpeg_process(formatted_headers, width, height)
-        output_process = initialize_output_ffmpeg_process(width, height, fps)
-        frame_size = width * height * 3  # width * height * 3 (for bgr24)
-        while True:
-            frame = np.frombuffer(input_process.stdout.read(frame_size), dtype=np.uint8).reshape((height, width, 3))
-            processed_frame = process_frame(frame)
-            output_process.stdin.write(processed_frame.tobytes()) 
+        try:
+            input_process = initialize_ffmpeg_process(formatted_headers, width, height)
+            output_process = initialize_output_ffmpeg_process(width, height, fps)
+            frame_size = width * height
+            while True:
+                processed_frame = process_frame(np.frombuffer(input_process.stdout.read(frame_size), dtype=np.uint8).reshape((height, width, 3)), height, width)
+                output_process.stdin.write(processed_frame.tobytes()) 
+        except Exception as e:
+            print(f'Pipe Broken: {e}')
+
 
 if __name__ == "__main__":
     main()
