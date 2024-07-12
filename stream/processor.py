@@ -157,7 +157,6 @@ def initialize_ffmpeg_process(headers, width, height):
         '-f', 'rawvideo',
         '-pix_fmt', 'gray',
         '-s', f'{width}x{height}',
-        '-an',  # Disable audio
         '-'
     ]
     return subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10**8)
@@ -170,7 +169,6 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
-        '-an',  # Disable audio
         '-c:v', 'libx264',
         '-f', 'hls',
         '-g', str(int(fps * 6)),
@@ -250,7 +248,9 @@ def main():
             output_process = initialize_output_ffmpeg_process(width, height, fps)
             frame_size = width * height
             while True:
-                processed_frame = process_frame(np.frombuffer(input_process.stdout.read(frame_size), dtype=np.uint8).reshape((height, width, 3)), height, width)
+                frame = input_process.stdout.read(frame_size)
+                array = np.frombuffer(frame, dtype=np.uint8).reshape((height, width))
+                processed_frame = process_frame(array)
                 output_process.stdin.write(processed_frame.tobytes()) 
         except Exception as e:
             print(f'Pipe Broken: {e}')
