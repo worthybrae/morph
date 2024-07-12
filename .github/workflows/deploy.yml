@@ -21,7 +21,9 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             cd morph
-            git pull
+            git fetch origin main
+            git reset --hard origin/main
             docker-compose down
+            docker system prune -af
             docker-compose build --no-cache
             docker-compose up -d
