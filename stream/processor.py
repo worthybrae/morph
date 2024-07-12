@@ -7,8 +7,6 @@ import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
-from scipy.interpolate import splprep, splev
-from collections import deque
 
 
 def find_midpoint(start_time, end_time):
@@ -201,18 +199,33 @@ def process_frame(input_process, output_process, width, height):
     inv_gamma = 1.0 / gamma
     # Build a lookup table mapping pixel values [0, 255] to their adjusted gamma values
     lookup_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], dtype=np.uint8)
-    # Apply the gamma correction using the lookup table
-    emphasized_darker = cv2.LUT(array, lookup_table)
+    emphasized_darker = cv2.LUT(array, lookup_table) # Apply the gamma correction using the lookup table
     times['make_darker'] = time.time() - start
 
     start = time.time()
-    sin_value = (np.sin(start) + 1) / 2  # Normalize sin_value to be between 0 and 1
-    # Calculate dynamic kernel size based on sin_value
-    kernel_size_dilate = int(3 + 6 * sin_value)  # Vary kernel size between 3 and 9
-    kernel_size_erode = int(4 + 8 * sin_value)  # Vary kernel size between 4 and 12
-    # Create dynamic kernels
-    kernel_dilate = np.random.randint(0, 2, (kernel_size_dilate, kernel_size_dilate)).astype(np.uint8)
-    kernel_erode = np.random.randint(0, 2, (kernel_size_erode, kernel_size_erode)).astype(np.uint8)
+
+    rows = 9
+    cols = 6
+
+    # Initialize the kernel with zeros
+    kernel_dilate = np.zeros((rows, cols), dtype=np.uint8)
+
+    # Randomly set one element per row to 1
+    for i in range(rows):
+        random_col = np.random.randint(0, cols)  # Select a random column index
+        kernel_dilate[i, random_col] = 1
+
+    # Initialize the kernel with zeros
+    kernel_erode = np.zeros((rows, cols), dtype=np.uint8)
+
+    # Randomly set one element per row to 1
+    for i in range(rows):
+        random_col = np.random.randint(0, cols)  # Select a random column index
+        kernel_erode[i, random_col] = 1
+    
+    print(kernel_dilate)
+    print(kernel_erode)
+
     # Apply dilation with the time-based random kernel
     dilated = cv2.dilate(emphasized_darker, kernel_dilate, iterations=1)
     # Apply erosion with another time-based random kernel
