@@ -204,27 +204,12 @@ def process_frame(input_process, output_process, width, height):
 
     start = time.time()
 
-    rows = 9
-    cols = 6
+    kernel_size = (15, 15)
 
-    # Initialize the kernel with zeros
-    kernel_dilate = np.zeros((rows, cols), dtype=np.uint8)
-
-    # Randomly set one element per row to 1
-    for i in range(rows):
-        random_col = np.random.randint(0, cols)  # Select a random column index
-        kernel_dilate[i, random_col] = 1
-
-    # Initialize the kernel with zeros
-    kernel_erode = np.zeros((rows, cols), dtype=np.uint8)
-
-    # Randomly set one element per row to 1
-    for i in range(rows):
-        random_col = np.random.randint(0, cols)  # Select a random column index
-        kernel_erode[i, random_col] = 1
-    
-    print(kernel_dilate)
-    print(kernel_erode)
+    # Create a random dilation kernel
+    kernel_dilate = np.random.randint(0, 2, kernel_size, dtype=np.uint8)
+    # Create a random erosion kernel
+    kernel_erode = np.random.randint(0, 2, kernel_size, dtype=np.uint8)
 
     # Apply dilation with the time-based random kernel
     dilated = cv2.dilate(emphasized_darker, kernel_dilate, iterations=1)
