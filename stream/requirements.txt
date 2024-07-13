@@ -13,7 +13,7 @@ boto3==1.28.20
 botocore==1.31.20
 Cartopy==0.22.0
 certifi==2024.6.2
-cffi @ file:///private/tmp/cffi-20231211-40239-j25k6o/cffi-1.16.0
+cffi==1.16.0
 charset-normalizer==3.2.0
 click==8.1.7
 click-plugins==1.1.1
@@ -25,7 +25,7 @@ cryptography==40.0.2
 cycler==0.12.1
 debugpy==1.8.0
 decorator==5.1.1
-docutils @ file:///private/tmp/docutils-20231211-36728-9mhbst/docutils-0.20.1
+docutils==0.20.1
 executing==2.0.1
 filelock==3.12.4
 Fiona==1.9.4.post1
