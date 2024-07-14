@@ -33,5 +33,3 @@ Before you begin, ensure you have the following installed on your system:
 4. install docker / docker-compose: `snap install docker`
 5. git clone https://github.com/worthybrae/morph.git
 6. update your github secrets to reflect the necessary value in the deploy.yml file
-
-## about
