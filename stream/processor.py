@@ -182,30 +182,37 @@ def process_frame(input_process, output_process, width, height):
     times = {}
     total_start = time.time()
 
+    print('getting frame...')
     start = time.time()
     frame = input_process.stdout.read(width * height)
     times['get_frame'] = time.time() - start
 
+    print('converting array...')
     start = time.time()
     array = np.frombuffer(frame, dtype=np.uint8).reshape((height, width))
     times['convert_array'] = time.time() - start
 
+    print('getting colors...')
     start = time.time()
     background_color, line_color = get_colors()
     times['get_colors'] = time.time() - start
 
+    print('getting edges...')
     start = time.time()
     edges = cv2.Canny(array, 300, 400, apertureSize=5)
     times['get_edges'] = time.time() - start
 
+    print('drawing background...')
     start = time.time()
     colored_frame = np.full((height, width, 3), background_color, dtype=np.uint8)
     times['draw_background'] = time.time() - start
 
+    print('drawing lines...')
     start = time.time()
     colored_frame[edges != 0] = line_color
     times['draw_lines'] = time.time() - start
 
+    print('sending output...')
     start = time.time()
     output_process.stdin.write(colored_frame.tobytes())
     times['send_output'] = time.time() - start
