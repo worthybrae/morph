@@ -21,7 +21,7 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             cd morph
-            for i in {1..5}; do git fetch origin main && break || sleep 15; done
+            git fetch origin main
             git reset --hard origin/main
             docker-compose down
             docker system prune -af
