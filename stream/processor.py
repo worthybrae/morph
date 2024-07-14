@@ -195,7 +195,7 @@ def process_frame(input_process, output_process, width, height):
     times['get_colors'] = time.time() - start
 
     start = time.time()
-    edges = cv2.Canny(frame, 300, 400, apertureSize=5)
+    edges = cv2.Canny(array, 300, 400, apertureSize=5)
     times['get_edges'] = time.time() - start
 
     start = time.time()
