@@ -2,7 +2,13 @@
 
 custom mask for livestream videos
 
-## local setup
+## local run
+
+```
+python stream/processor.py
+```
+
+## local docker setup
 
 ```
 docker-compose build --no-cache
