@@ -7,6 +7,7 @@ import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
+from scipy.interpolate import splprep, splev
 
 
 def find_midpoint(start_time, end_time):
@@ -167,18 +168,21 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
-        '-c:v', 'libx264',
+        '-c:v', 'libx264',  # Use VideoToolbox for hardware-accelerated encoding
+        '-b:v', '5000k',  # Set the video bitrate
+        '-preset', 'fast',
+        '-tune', 'zerolatency',
         '-f', 'hls',
-        '-g', str(int(fps * 6)),
-        '-hls_time', '6',
-        '-hls_list_size', '5',
+        '-g', str(int(fps * 3)),
+        '-hls_time', '3',
+        '-hls_list_size', '10',
         '-hls_flags', 'delete_segments',
-        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '/tmp/hls/stream.m3u8'
+        '-hls_segment_filename', './tmp/hls/stream%03d.ts',
+        './tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(input_process, output_process, width, height):
+def process_frame(input_process, output_process, width, height, lookup_table):
     times = {}
     total_start = time.time()
 
@@ -191,11 +195,28 @@ def process_frame(input_process, output_process, width, height):
     times['convert_array'] = time.time() - start
 
     start = time.time()
-    edges = cv2.Canny(array, 400, 425, apertureSize=5)
-    times['get_edges'] = time.time() - start
+    blurred_image = cv2.blur(array, (5, 5))
+    times['blur'] = time.time() - start
+
+    start = time.time()
+    emphasized_darker = cv2.LUT(blurred_image, lookup_table) # Apply the gamma correction using the lookup table
+    times['darker'] = time.time() - start
+
+    start = time.time()
+    edges = cv2.Canny(emphasized_darker, 1175, 1200, apertureSize=5)
+    times['edges'] = time.time() - start
+
+    start = time.time()
+    kernel = np.array([
+        [0, 1, 0, 0, 0],
+        [1, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 1, 0]], dtype=np.uint8)
+    gradient = cv2.morphologyEx(edges, cv2.MORPH_GRADIENT, kernel)
+    times['dilate'] = time.time() - start
     
     start = time.time()
-    output_process.stdin.write(edges.tobytes())
+    output_process.stdin.write(gradient.tobytes())
     times['send_output'] = time.time() - start
 
     times['total'] = time.time() - total_start
@@ -223,6 +244,10 @@ def main():
         'sec-ch-ua-platform': '"macOS"'
     }
     formatted_headers = format_headers(headers)
+    gamma = 0.5  # Gamma value less than 1
+    inv_gamma = 1.0 / gamma
+    # Build a lookup table mapping pixel values [0, 255] to their adjusted gamma values
+    lookup_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], dtype=np.uint8)
 
     # Start running indefinite loop
     while True:
@@ -230,7 +255,7 @@ def main():
             input_process = initialize_ffmpeg_process(formatted_headers, width, height)
             output_process = initialize_output_ffmpeg_process(width, height, fps)
             while True:
-                process_frame(input_process, output_process, width, height) 
+                process_frame(input_process, output_process, width, height, lookup_table) 
         except Exception as e:
             print(f'Pipe Broken: {e}')
 
