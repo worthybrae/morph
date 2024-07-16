@@ -7,7 +7,6 @@ import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
-from scipy.interpolate import splprep, splev
 
 
 def find_midpoint(start_time, end_time):
@@ -164,7 +163,7 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ffmpeg_command = [
         'ffmpeg',
         '-f', 'rawvideo',
-        '-pix_fmt', 'gray',
+        '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
         '-r', str(fps),
         '-i', '-',
@@ -191,6 +190,10 @@ def process_frame(input_process, output_process, width, height, lookup_table):
     times['get_frame'] = time.time() - start
 
     start = time.time()
+    background_color, line_color = get_colors()
+    times['get_colors'] = time.time() - start
+
+    start = time.time()
     array = np.frombuffer(frame, dtype=np.uint8).reshape((height, width))
     times['convert_array'] = time.time() - start
 
@@ -210,13 +213,21 @@ def process_frame(input_process, output_process, width, height, lookup_table):
     kernel = np.array([
         [0, 1, 0, 0, 0],
         [1, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
         [0, 0, 0, 0, 1],
         [0, 0, 0, 1, 0]], dtype=np.uint8)
     gradient = cv2.morphologyEx(edges, cv2.MORPH_GRADIENT, kernel)
     times['dilate'] = time.time() - start
-    
+
     start = time.time()
-    output_process.stdin.write(gradient.tobytes())
+    colored_output = np.zeros((height, width, 3), dtype=np.uint8)
+    colored_output[..., 0] = np.select([gradient == 0, gradient != 0], [background_color[0], line_color[0]])
+    colored_output[..., 1] = np.select([gradient == 0, gradient != 0], [background_color[1], line_color[1]])
+    colored_output[..., 2] = np.select([gradient == 0, gradient != 0], [background_color[2], line_color[2]])
+    times['colorize'] = time.time() - start
+
+    start = time.time()
+    output_process.stdin.write(colored_output.tobytes())
     times['send_output'] = time.time() - start
 
     times['total'] = time.time() - total_start
