@@ -7,7 +7,23 @@ import pytz
 import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
+from numba import jit
 
+
+@jit(nopython=True)
+def colorize_gradient(gradient, background_color, line_color, height, width):
+    colored_output = np.zeros((height, width, 3), dtype=np.uint8)
+    for i in range(height):
+        for j in range(width):
+            if gradient[i, j] == 0:
+                colored_output[i, j, 0] = background_color[0]
+                colored_output[i, j, 1] = background_color[1]
+                colored_output[i, j, 2] = background_color[2]
+            else:
+                colored_output[i, j, 0] = line_color[0]
+                colored_output[i, j, 1] = line_color[1]
+                colored_output[i, j, 2] = line_color[2]
+    return colored_output
 
 def find_midpoint(start_time, end_time):
     return start_time + (end_time - start_time) / 2
@@ -220,10 +236,7 @@ def process_frame(input_process, output_process, width, height, lookup_table):
     times['dilate'] = time.time() - start
 
     start = time.time()
-    colored_output = np.zeros((height, width, 3), dtype=np.uint8)
-    colored_output[..., 0] = np.select([gradient == 0, gradient != 0], [background_color[0], line_color[0]])
-    colored_output[..., 1] = np.select([gradient == 0, gradient != 0], [background_color[1], line_color[1]])
-    colored_output[..., 2] = np.select([gradient == 0, gradient != 0], [background_color[2], line_color[2]])
+    colored_output = colorize_gradient(gradient, background_color, line_color, height, width)
     times['colorize'] = time.time() - start
 
     start = time.time()
