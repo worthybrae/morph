@@ -8,8 +8,6 @@ import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
 from numba import jit
-import multiprocessing
-from functools import partial
 
 
 @jit(nopython=True)
@@ -26,48 +24,6 @@ def colorize_gradient(gradient, background_color, line_color, height, width):
                 colored_output[i, j, 1] = line_color[1]
                 colored_output[i, j, 2] = line_color[2]
     return colored_output
-
-def print_time_stats(time_data, write_time, total_time, batch_size=90, max_time=3):
-    """
-    Print statistics for timing data, including write time.
-    
-    :param time_data: List of dictionaries, each containing timing information for a frame
-    :param write_time: Time taken to write the batch to output
-    :param batch_size: Number of frames in the batch (default 90)
-    :param max_time: Maximum allowed time for processing (default 3 seconds)
-    """
-    # Combine all dictionaries
-    all_times = {key: [] for key in time_data[0].keys()}
-    for frame_time in time_data:
-        for key, value in frame_time.items():
-            all_times[key].append(value)
-
-    # Calculate total time for each frame
-    total_times = [sum(frame.values()) for frame in time_data]
-
-    print(f"\nTiming statistics for batch of {batch_size} frames:")
-    print(f"{'Operation':<15} {'Avg (s)':<10} {'Std Dev (s)':<12} {'% of Total':<12} {'% of Max Time':<15}")
-    print("-" * 70)
-
-    for operation, times in all_times.items():
-        avg_time = np.mean(times)
-        std_dev = np.std(times)
-        percent_of_total = (avg_time / (np.mean(total_times) + write_time / batch_size)) * 100
-        percent_of_max = (avg_time / max_time) * 100
-
-        print(f"{operation:<15} {avg_time:<10.6f} {std_dev:<12.6f} {percent_of_total:<12.2f} {percent_of_max:<15.2f}")
-
-    # Add write time
-    avg_write_time = write_time / batch_size  # Average write time per frame
-    percent_of_total_write = (avg_write_time / (np.mean(total_times) + avg_write_time)) * 100
-    percent_of_max_write = (avg_write_time / max_time) * 100
-    print(f"{'write':<15} {avg_write_time:<10.6f} {'N/A':<12} {percent_of_total_write:<12.2f} {percent_of_max_write:<15.2f}")
-
-    print("-" * 70)
-    total_avg = np.mean(total_times) + avg_write_time / 90
-    total_std = np.std(total_times)  # Note: This doesn't include write time variability
-    print(f"{'Per Frame':<15} {total_avg:<10.6f} {total_std:<12.6f} 100.00        {(total_avg / max_time) * 100:<15.2f}")
-    print(f"{'Total':<15} {total_time:<10.6f} ({(total_time / max_time) * 100:<15.2f}% of total time)")
 
 def find_midpoint(start_time, end_time):
     return start_time + (end_time - start_time) / 2
@@ -241,15 +197,24 @@ def initialize_output_ffmpeg_process(width, height, fps):
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(order, frame, read_time, width, height, lookup_table):
-    times = {'read': read_time}
+def process_frame(input_process, output_process, width, height, lookup_table):
+    times = {}
+    total_start = time.time()
+
+    start = time.time()
+    frame = input_process.stdout.read(width * height)
+    times['get_frame'] = time.time() - start
 
     start = time.time()
     background_color, line_color = get_colors()
     times['get_colors'] = time.time() - start
 
     start = time.time()
-    blurred_image = cv2.blur(frame, (5, 5))
+    array = np.frombuffer(frame, dtype=np.uint8).reshape((height, width))
+    times['convert_array'] = time.time() - start
+
+    start = time.time()
+    blurred_image = cv2.blur(array, (5, 5))
     times['blur'] = time.time() - start
 
     start = time.time()
@@ -273,7 +238,15 @@ def process_frame(order, frame, read_time, width, height, lookup_table):
     start = time.time()
     colored_output = colorize_gradient(gradient, background_color, line_color, height, width)
     times['colorize'] = time.time() - start
-    return order, colored_output.tobytes(), times
+
+    start = time.time()
+    output_process.stdin.write(colored_output.tobytes())
+    times['send_output'] = time.time() - start
+
+    times['total'] = time.time() - total_start
+    for k, v in times.items():
+        print(f"{k:>40}\t{v:.6f}s\t\t({(v/times['total'])*100:,.1f}% of total)\t\t({(v/(1/30))*100:,.1f}% of max time)")
+    print('------------------------------------------------------------------------------------------------------------')
         
 def main():
     # Specify global variables
@@ -301,43 +274,12 @@ def main():
     lookup_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], dtype=np.uint8)
 
     # Start running indefinite loop
-    pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-    
     while True:
         try:
             input_process = initialize_ffmpeg_process(formatted_headers, width, height)
             output_process = initialize_output_ffmpeg_process(width, height, fps)
-            
             while True:
-                starting_time = time.time()
-                frames = []
-                for i in range(90):
-                    start = time.time()
-                    frame = input_process.stdout.read(width * height)
-                    if len(frame) < width * height:
-                        # Handle the error - maybe wait and retry, or restart the stream
-                        print('\n\nincomplete frame\n\n')
-                        break
-
-                    array = np.frombuffer(frame, dtype=np.uint8).reshape((height, width))
-                    read_time = time.time() - start
-                    frames.append((i, array, read_time, width, height, lookup_table))
-                
-                if len(frames) > 0:
-
-                    results = pool.starmap(process_frame, frames)
-                    results.sort(key=lambda x: x[0])  # Ensure correct order
-
-                    time_data = [result[2] for result in results]
-                    
-                    start_write = time.time()
-                    output_process.stdin.write(b''.join([result[1] for result in results]))
-                    write_time = time.time() - start_write
-
-                    total_time = time.time() - starting_time
-
-                    print_time_stats(time_data, write_time, total_time)
-
+                process_frame(input_process, output_process, width, height, lookup_table) 
         except Exception as e:
             print(f'Pipe Broken: {e}')
 
