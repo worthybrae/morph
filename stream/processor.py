@@ -13,11 +13,11 @@ import select
 
 
 @jit(nopython=True)
-def colorize_gradient(gradient, background_color, line_color, height, width):
+def colorize(frame, background_color, line_color, height, width):
     colored_output = np.zeros((height, width, 3), dtype=np.uint8)
     for i in range(height):
         for j in range(width):
-            if gradient[i, j] == 0:
+            if frame[i, j] == 0:
                 colored_output[i, j, 0] = background_color[0]
                 colored_output[i, j, 1] = background_color[1]
                 colored_output[i, j, 2] = background_color[2]
@@ -222,8 +222,8 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-hls_time', '3',
         '-hls_list_size', '5',
         '-hls_flags', 'delete_segments',
-        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '/tmp/hls/stream.m3u8'
+        '-hls_segment_filename', './tmp/hls/stream%03d.ts',
+        './tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
@@ -244,29 +244,11 @@ def process_frame(input_process, output_process, width, height, lookup_table, fr
     times['convert_array'] = time.time() - start
 
     start = time.time()
-    blurred_image = cv2.blur(array, (5, 5))
-    times['blur'] = time.time() - start
-
-    start = time.time()
-    emphasized_darker = cv2.LUT(blurred_image, lookup_table) # Apply the gamma correction using the lookup table
-    times['darker'] = time.time() - start
-
-    start = time.time()
-    edges = cv2.Canny(emphasized_darker, 975, 1000, apertureSize=5)
+    edges = cv2.Canny(array, 975, 1000, apertureSize=5)
     times['edges'] = time.time() - start
 
     start = time.time()
-    kernel = np.array([
-        [0, 1, 0, 0, 0],
-        [1, 1, 1, 1, 0],
-        [1, 1, 0, 0, 0],
-        [0, 0, 0, 1, 1],
-        [0, 1, 1, 1, 1]], dtype=np.uint8)
-    gradient = cv2.morphologyEx(edges, cv2.MORPH_GRADIENT, kernel)
-    times['dilate'] = time.time() - start
-
-    start = time.time()
-    colored_output = colorize_gradient(gradient, background_color, line_color, height, width)
+    colored_output = colorize(edges, background_color, line_color, height, width)
     times['colorize'] = time.time() - start
 
     start = time.time()
