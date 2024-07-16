@@ -1,5 +1,7 @@
 # morph
 
+![random segment](assets/stream136.gif)
+
 custom mask for livestream videos
 
 ## local run
