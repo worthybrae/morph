@@ -40,6 +40,12 @@ def print_stats(stats):
             fv = [x for x in v if x <= 10000]
             avg = np.mean(fv)
             std = np.std(fv)
+        elif k == 'waiting':
+
+            avg = np.mean(v)
+            avg_seconds = avg / 1e6
+            print("{:<20} {:>10.6f}s".format(k, avg_seconds))
+            continue
         else:
             avg = np.mean(v)
             std = np.std(v)
@@ -222,18 +228,20 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-hls_time', '3',
         '-hls_list_size', '5',
         '-hls_flags', 'delete_segments',
-        '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
-        '/tmp/hls/stream.m3u8'
+        '-hls_segment_filename', './tmp/hls/stream%03d.ts',
+        './tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(input_process, output_process, width, height, lookup_table, frame_count, stats):
-    times = {}
-    total_start = time.time()
+def process_frame(input_process, output_process, width, height, frame_count, stats):
+    times = {'waiting': 0}
 
     start = time.time()
     frame = input_process.stdout.read(width * height)
-    times['get_frame'] = time.time() - start
+    read_time = time.time() - start
+    times['get_frame'] = min(read_time, .005)
+    if times['get_frame'] == .005:
+        times['waiting'] = read_time - .005
 
     start = time.time()
     background_color, line_color = get_colors()
@@ -244,7 +252,7 @@ def process_frame(input_process, output_process, width, height, lookup_table, fr
     times['convert_array'] = time.time() - start
 
     start = time.time()
-    edges = cv2.Canny(array, 400, 425, apertureSize=5)
+    edges = cv2.Canny(array, 700, 725, apertureSize=5, L2gradient=True)
     times['edges'] = time.time() - start
 
     start = time.time()
@@ -255,7 +263,7 @@ def process_frame(input_process, output_process, width, height, lookup_table, fr
     output_process.stdin.write(colored_output.tobytes())
     times['send_output'] = time.time() - start
 
-    times['total'] = time.time() - total_start
+    times['total'] = times['get_frame'] + times['get_colors'] + times['convert_array'] + times['edges'] + times['colorize'] + times['send_output']
     
     # Update stats
     for k, v in times.items():
@@ -288,13 +296,8 @@ def main():
         'sec-ch-ua-platform': '"macOS"'
     }
     formatted_headers = format_headers(headers)
-    gamma = 0.5  # Gamma value less than 1
-    inv_gamma = 1.0 / gamma
-    # Build a lookup table mapping pixel values [0, 255] to their adjusted gamma values
-    lookup_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], dtype=np.uint8)
     frame_count = 0
     stats = defaultdict(list)
-    frame = None
 
     # Start running indefinite loop
     while True:
@@ -302,7 +305,7 @@ def main():
             input_process = initialize_ffmpeg_process(formatted_headers, width, height)
             output_process = initialize_output_ffmpeg_process(width, height, fps)
             while True:
-                process_frame(input_process, output_process, width, height, lookup_table, frame_count, stats)
+                process_frame(input_process, output_process, width, height, frame_count, stats)
                 frame_count += 1
                 
         except Exception as e:
