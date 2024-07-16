@@ -6,6 +6,7 @@ custom mask for livestream videos
 
 ```
 python stream/processor.py
+python server/server.py
 ```
 
 ## local docker setup
