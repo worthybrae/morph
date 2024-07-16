@@ -8,6 +8,8 @@ import matplotlib.colors as mcolors
 from astral import LocationInfo
 from astral.sun import sun
 from numba import jit
+from collections import defaultdict
+import select
 
 
 @jit(nopython=True)
@@ -24,6 +26,34 @@ def colorize_gradient(gradient, background_color, line_color, height, width):
                 colored_output[i, j, 1] = line_color[1]
                 colored_output[i, j, 2] = line_color[2]
     return colored_output
+
+def print_stats(stats):
+    print("\n{:<20} {:>25} {:>20} {:>20}".format(
+        "Operation", "Avg ± Std Dev", "% of Total", "% of Max Time"))
+    print("-" * 90)
+
+    total_avg = np.mean(stats['total'])
+    max_time = 1/30 * 1e6  # 33333.33 us
+
+    for k, v in stats.items():
+        if k == 'get_frame':
+            fv = [x for x in v if x <= 10000]
+            avg = np.mean(fv)
+            std = np.std(fv)
+        else:
+            avg = np.mean(v)
+            std = np.std(v)
+        percent_of_total = (avg / total_avg) * 100
+        percent_of_max = (avg / max_time) * 100
+
+        # Convert avg to seconds and std to microseconds
+        avg_seconds = avg / 1e6
+        std_microseconds = std
+
+        print("{:<20} {:>10.6f}s ± {:>10.2f} us {:>18.2f}% {:>18.2f}%".format(
+            k, avg_seconds, std_microseconds, percent_of_total, percent_of_max))
+    
+    print("-" * 90)
 
 def find_midpoint(start_time, end_time):
     return start_time + (end_time - start_time) / 2
@@ -190,14 +220,14 @@ def initialize_output_ffmpeg_process(width, height, fps):
         '-f', 'hls',
         '-g', str(int(fps * 3)),
         '-hls_time', '3',
-        '-hls_list_size', '10',
+        '-hls_list_size', '5',
         '-hls_flags', 'delete_segments',
         '-hls_segment_filename', '/tmp/hls/stream%03d.ts',
         '/tmp/hls/stream.m3u8'
     ]
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
-def process_frame(input_process, output_process, width, height, lookup_table):
+def process_frame(input_process, output_process, width, height, lookup_table, frame_count, stats):
     times = {}
     total_start = time.time()
 
@@ -222,16 +252,16 @@ def process_frame(input_process, output_process, width, height, lookup_table):
     times['darker'] = time.time() - start
 
     start = time.time()
-    edges = cv2.Canny(emphasized_darker, 1175, 1200, apertureSize=5)
+    edges = cv2.Canny(emphasized_darker, 975, 1000, apertureSize=5)
     times['edges'] = time.time() - start
 
     start = time.time()
     kernel = np.array([
         [0, 1, 0, 0, 0],
-        [1, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 1],
-        [0, 0, 0, 1, 0]], dtype=np.uint8)
+        [1, 1, 1, 1, 0],
+        [1, 1, 0, 0, 0],
+        [0, 0, 0, 1, 1],
+        [0, 1, 1, 1, 1]], dtype=np.uint8)
     gradient = cv2.morphologyEx(edges, cv2.MORPH_GRADIENT, kernel)
     times['dilate'] = time.time() - start
 
@@ -244,9 +274,17 @@ def process_frame(input_process, output_process, width, height, lookup_table):
     times['send_output'] = time.time() - start
 
     times['total'] = time.time() - total_start
+    
+    # Update stats
     for k, v in times.items():
-        print(f"{k:>40}\t{v:.6f}s\t\t({(v/times['total'])*100:,.1f}% of total)\t\t({(v/(1/30))*100:,.1f}% of max time)")
-    print('------------------------------------------------------------------------------------------------------------')
+        stats[k].append(v * 1e6)  # Convert to microseconds
+
+    # Print stats every 90 frames
+    if frame_count % 90 == 0:
+        print_stats(stats)
+        stats.clear()
+    
+    return True
         
 def main():
     # Specify global variables
@@ -272,6 +310,9 @@ def main():
     inv_gamma = 1.0 / gamma
     # Build a lookup table mapping pixel values [0, 255] to their adjusted gamma values
     lookup_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], dtype=np.uint8)
+    frame_count = 0
+    stats = defaultdict(list)
+    frame = None
 
     # Start running indefinite loop
     while True:
@@ -279,10 +320,11 @@ def main():
             input_process = initialize_ffmpeg_process(formatted_headers, width, height)
             output_process = initialize_output_ffmpeg_process(width, height, fps)
             while True:
-                process_frame(input_process, output_process, width, height, lookup_table) 
+                process_frame(input_process, output_process, width, height, lookup_table, frame_count, stats)
+                frame_count += 1
+                
         except Exception as e:
             print(f'Pipe Broken: {e}')
-
 
 if __name__ == "__main__":
     main()
