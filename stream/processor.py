@@ -252,7 +252,7 @@ def process_frame(input_process, output_process, width, height, frame_count, sta
     times['convert_array'] = time.time() - start
 
     start = time.time()
-    edges = cv2.Canny(array, 1175, 1200, apertureSize=5, L2gradient=True)
+    edges = cv2.Canny(array, 575, 600, apertureSize=5, L2gradient=True)
     times['edges'] = time.time() - start
 
     start = time.time()
