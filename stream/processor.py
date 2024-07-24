@@ -280,7 +280,7 @@ def main():
     # Specify global variables
     width = 640
     height = 480
-    fps = 30
+    fps = 20
     headers = {
         'Accept': '*/*',
         'Accept-Language': 'en-US,en;q=0.9',
