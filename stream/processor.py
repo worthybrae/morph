@@ -278,8 +278,8 @@ def process_frame(input_process, output_process, width, height, frame_count, sta
         
 def main():
     # Specify global variables
-    width = 1080
-    height = 720
+    width = 640
+    height = 480
     fps = 30
     headers = {
         'Accept': '*/*',
