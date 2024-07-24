@@ -203,7 +203,7 @@ def initialize_ffmpeg_process(headers, width, height):
     ffmpeg_command = [
         'ffmpeg',
         '-headers', headers,
-        '-i', 'https://videos-3.earthcam.com/fecnetwork/AbbeyRoadHD1.flv/chunklist_w.m3u8',
+        '-i', 'https://videos-3.earthcam.com/fecnetwork/hdtimes10.flv/chunklist_w.m3u8',
         '-f', 'rawvideo',
         '-pix_fmt', 'gray',
         '-s', f'{width}x{height}',
