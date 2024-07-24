@@ -309,7 +309,17 @@ def main():
                 frame_count += 1
                 
         except Exception as e:
-            print(f'Pipe Broken: {e}')
+            print(f'Pipe broken: {e}')
+            print(f'Attempting to recreate processes...')
+
+            # Close existing processes if they're still running
+            if 'input_process' in locals():
+                input_process.terminate()
+            if 'output_process' in locals():
+                output_process.terminate()
+
+            # Wait a bit before retrying
+            time.sleep(3)
 
 if __name__ == "__main__":
     main()
